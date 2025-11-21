@@ -6,7 +6,14 @@ const isocline = @import("isocline_wrapper.zig");
 const highlighter = @import("highlighter.zig");
 
 fn rawPrint(text: []const u8) !void {
-    _ = try std.posix.write(std.posix.STDOUT_FILENO, text);
+    const builtin = @import("builtin");
+    if (builtin.os.tag == .windows) {
+        const windows = std.os.windows;
+        const handle = windows.GetStdHandle(windows.STD_OUTPUT_HANDLE) catch return error.StdoutUnavailable;
+        _ = try windows.WriteFile(handle, text, null);
+    } else {
+        _ = try std.posix.write(std.posix.STDOUT_FILENO, text);
+    }
 }
 
 // Command completer - called by ic_complete_word for REPL commands
