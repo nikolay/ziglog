@@ -38,7 +38,10 @@
       "Bash(for file in /Users/nikolay/Code/nikolay/ziglog/src/*.zig)",
       "Bash(./scripts/update-isocline.sh:*)",
       "Bash(zig fmt:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(gh run list:*)"
     ],
     "deny": [],
     "ask": []
