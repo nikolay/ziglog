@@ -19,20 +19,20 @@ pub const TokenType = enum {
     minus,
     mul,
     div,
-    int_div,     // //
+    int_div, // //
     greater,
     less,
     greater_equal,
     less_equal,
     not_equal,
     equal,
-    arith_equal,      // =:=
-    arith_not_equal,  // =\=
+    arith_equal, // =:=
+    arith_not_equal, // =\=
     semicolon,
     not,
     is,
-    arrow,        // --> (DCG)
-    if_then,      // -> (if-then)
+    arrow, // --> (DCG)
+    if_then, // -> (if-then)
     eof,
 };
 
@@ -76,11 +76,11 @@ pub const Lexer = struct {
             'r' => try buffer.append(self.alloc, '\r'), // Carriage return
             't' => try buffer.append(self.alloc, '\t'), // Tab
             'v' => try buffer.append(self.alloc, 0x0B), // Vertical tab
-            's' => try buffer.append(self.alloc, ' '),  // Space
+            's' => try buffer.append(self.alloc, ' '), // Space
             '\\' => try buffer.append(self.alloc, '\\'), // Backslash
             '\'' => try buffer.append(self.alloc, '\''), // Single quote
-            '"' => try buffer.append(self.alloc, '"'),  // Double quote
-            '`' => try buffer.append(self.alloc, '`'),  // Back quote
+            '"' => try buffer.append(self.alloc, '"'), // Double quote
+            '`' => try buffer.append(self.alloc, '`'), // Back quote
             'x' => {
                 // Hexadecimal: \xNN\ or \xNN (closing backslash optional)
                 // Note: closing backslash is only consumed if it's not starting a new escape
@@ -651,7 +651,8 @@ pub const Lexer = struct {
                         const remaining = self.source[self.pos..];
                         if (remaining.len >= 3 and
                             (std.mem.eql(u8, remaining[0..3], "Inf") or
-                             std.mem.eql(u8, remaining[0..3], "NaN"))) {
+                                std.mem.eql(u8, remaining[0..3], "NaN")))
+                        {
                             self.pos += 3;
                             return Token{ .tag = .number, .value = self.source[start..self.pos], .start = start };
                         }
@@ -984,21 +985,21 @@ test "Lexer - escape sequences" {
     try std.testing.expectEqualStrings("ABC", t4.value);
 
     // Test Unicode \uXXXX
-    const source5 = "\"\\u00e9\"";  // é
+    const source5 = "\"\\u00e9\""; // é
     var l5 = Lexer.init(alloc, source5);
     const t5 = l5.next();
     try std.testing.expectEqual(TokenType.string, t5.tag);
     try std.testing.expectEqualStrings("é", t5.value);
 
     // Test Unicode \UXXXXXXXX
-    const source6 = "\"\\U0001F600\"";  // 😀
+    const source6 = "\"\\U0001F600\""; // 😀
     var l6 = Lexer.init(alloc, source6);
     const t6 = l6.next();
     try std.testing.expectEqual(TokenType.string, t6.tag);
     try std.testing.expectEqualStrings("😀", t6.value);
 
     // Test octal escape
-    const source7 = "\"\\101\\102\\103\"";  // ABC
+    const source7 = "\"\\101\\102\\103\""; // ABC
     var l7 = Lexer.init(alloc, source7);
     const t7 = l7.next();
     try std.testing.expectEqual(TokenType.string, t7.tag);
@@ -1025,7 +1026,7 @@ test "Lexer - Unicode support" {
     try std.testing.expectEqualStrings("café", t1.value);
 
     // Test Unicode in atoms
-    const source2 = "'привет'";  // Russian "hello"
+    const source2 = "'привет'"; // Russian "hello"
     var l2 = Lexer.init(alloc, source2);
     const t2 = l2.next();
     try std.testing.expectEqual(TokenType.atom, t2.tag);

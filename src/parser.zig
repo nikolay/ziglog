@@ -158,10 +158,10 @@ pub const Parser = struct {
 
     fn isInfixAtom(value: []const u8) bool {
         return std.mem.eql(u8, value, "div") or
-               std.mem.eql(u8, value, "mod") or
-               std.mem.eql(u8, value, "rem") or
-               std.mem.eql(u8, value, "min") or
-               std.mem.eql(u8, value, "max");
+            std.mem.eql(u8, value, "mod") or
+            std.mem.eql(u8, value, "rem") or
+            std.mem.eql(u8, value, "min") or
+            std.mem.eql(u8, value, "max");
     }
 
     pub fn parseTerm(self: *Parser) ParseError!*Term {

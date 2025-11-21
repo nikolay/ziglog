@@ -11,7 +11,6 @@ const copyTerm = @import("engine.zig").copyTerm;
 ///
 /// Lines starting with % EXPECT: specify expected output for the next query
 /// Multiple EXPECT lines can be used for multiple solutions
-
 const TestCase = struct {
     query: []const u8,
     expected: []const []const u8,

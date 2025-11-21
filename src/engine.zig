@@ -17,9 +17,9 @@ pub const SolutionHandlerError = error{
     InstantiationError,
     TypeException,
     UnknownOperator,
-    NegationFound,     // Used internally for negation-as-failure
+    NegationFound, // Used internally for negation-as-failure
     ConditionSucceeded, // Used internally for if-then-else
-    SystemResources,   // For I/O operations (write, format)
+    SystemResources, // For I/O operations (write, format)
 };
 
 pub const RuleList = ArrayListUnmanaged(Rule);
@@ -325,31 +325,31 @@ pub const Engine = struct {
 
                 continue; // Tail call optimization
             }
-        if (goal.* == .structure and std.mem.eql(u8, goal.structure.functor, "phrase") and (goal.structure.args.len == 2 or goal.structure.args.len == 3)) {
-            const dcg_goal = goal.structure.args[0];
-            const input_list = goal.structure.args[1];
-            var rest_list: *Term = undefined;
+            if (goal.* == .structure and std.mem.eql(u8, goal.structure.functor, "phrase") and (goal.structure.args.len == 2 or goal.structure.args.len == 3)) {
+                const dcg_goal = goal.structure.args[0];
+                const input_list = goal.structure.args[1];
+                var rest_list: *Term = undefined;
 
-            if (goal.structure.args.len == 2) {
-                rest_list = try Term.createAtom(self.alloc, "[]");
-            } else {
-                rest_list = goal.structure.args[2];
-            }
+                if (goal.structure.args.len == 2) {
+                    rest_list = try Term.createAtom(self.alloc, "[]");
+                } else {
+                    rest_list = goal.structure.args[2];
+                }
 
-            var new_goal: *Term = undefined;
-            if (dcg_goal.* == .atom) {
-                // Atom p -> p(Input, Rest)
-                new_goal = try Term.createStructure(self.alloc, dcg_goal.atom, &[_]*Term{ input_list, rest_list });
-            } else if (dcg_goal.* == .structure) {
-                // Structure p(X) -> p(X, Input, Rest)
-                var new_args = try std.ArrayListUnmanaged(*Term).initCapacity(self.alloc, dcg_goal.structure.args.len + 2);
-                try new_args.appendSlice(self.alloc, dcg_goal.structure.args);
-                try new_args.append(self.alloc, input_list);
-                try new_args.append(self.alloc, rest_list);
-                new_goal = try Term.createStructure(self.alloc, dcg_goal.structure.functor, try new_args.toOwnedSlice(self.alloc));
-            } else {
-                return .Normal; // Invalid goal for phrase
-            }
+                var new_goal: *Term = undefined;
+                if (dcg_goal.* == .atom) {
+                    // Atom p -> p(Input, Rest)
+                    new_goal = try Term.createStructure(self.alloc, dcg_goal.atom, &[_]*Term{ input_list, rest_list });
+                } else if (dcg_goal.* == .structure) {
+                    // Structure p(X) -> p(X, Input, Rest)
+                    var new_args = try std.ArrayListUnmanaged(*Term).initCapacity(self.alloc, dcg_goal.structure.args.len + 2);
+                    try new_args.appendSlice(self.alloc, dcg_goal.structure.args);
+                    try new_args.append(self.alloc, input_list);
+                    try new_args.append(self.alloc, rest_list);
+                    new_goal = try Term.createStructure(self.alloc, dcg_goal.structure.functor, try new_args.toOwnedSlice(self.alloc));
+                } else {
+                    return .Normal; // Invalid goal for phrase
+                }
 
                 // Prepend new_goal to current_goals and use tail call optimization
                 var next_goals = ArrayListUnmanaged(*Term){};
@@ -361,169 +361,125 @@ pub const Engine = struct {
                 continue; // Tail call optimization
             }
 
-        if (goal.* == .structure and std.mem.eql(u8, goal.structure.functor, "distinct") and goal.structure.args.len == 2) {
-            const template = goal.structure.args[0];
-            const sub_goal = goal.structure.args[1];
+            if (goal.* == .structure and std.mem.eql(u8, goal.structure.functor, "distinct") and goal.structure.args.len == 2) {
+                const template = goal.structure.args[0];
+                const sub_goal = goal.structure.args[1];
 
-            const CollectorContext = struct {
-                alloc: Allocator,
-                template: *Term,
-                seen: *std.AutoHashMap(u64, void),
-                original_handler: SolutionHandler,
-                original_env: *EnvMap,
-                engine: *Engine,
-            };
+                const CollectorContext = struct {
+                    alloc: Allocator,
+                    template: *Term,
+                    seen: *std.AutoHashMap(u64, void),
+                    original_handler: SolutionHandler,
+                    original_env: *EnvMap,
+                    engine: *Engine,
+                };
 
-            const seen = try self.alloc.create(std.AutoHashMap(u64, void));
-            seen.* = std.AutoHashMap(u64, void).init(self.alloc);
-            defer {
-                seen.deinit();
-                self.alloc.destroy(seen);
-            }
-
-            const wrapper = struct {
-                fn handle(ctx_ptr: ?*anyopaque, match_env: EnvMap, _: *Engine) SolutionHandlerError!void {
-                    const ctx: *CollectorContext = @ptrCast(@alignCast(ctx_ptr));
-
-                    // Check if 'template' instantiated in 'match_env' is unique.
-                    // distinct(X, Goal) filters solutions of Goal based on X.
-                    // We use match_env to propagate bindings if the solution is accepted.
-
-                    const term = try copyTerm(ctx.alloc, ctx.template, match_env);
-                    const hash = term.hash(); // We need a hash function for Term
-
-                    if (!ctx.seen.contains(hash)) {
-                        try ctx.seen.put(hash, {});
-                        try ctx.original_handler.handle(ctx.original_handler.context, match_env, ctx.engine);
-                    }
+                const seen = try self.alloc.create(std.AutoHashMap(u64, void));
+                seen.* = std.AutoHashMap(u64, void).init(self.alloc);
+                defer {
+                    seen.deinit();
+                    self.alloc.destroy(seen);
                 }
-            };
 
-            var distinct_ctx = CollectorContext{
-                .alloc = self.alloc,
-                .template = template,
-                .seen = seen,
-                .original_handler = handler,
-                .original_env = current_env,
-                .engine = self,
-            };
+                const wrapper = struct {
+                    fn handle(ctx_ptr: ?*anyopaque, match_env: EnvMap, _: *Engine) SolutionHandlerError!void {
+                        const ctx: *CollectorContext = @ptrCast(@alignCast(ctx_ptr));
 
-            const distinct_handler = SolutionHandler{
-                .context = &distinct_ctx,
-                .handle = wrapper.handle,
-            };
+                        // Check if 'template' instantiated in 'match_env' is unique.
+                        // distinct(X, Goal) filters solutions of Goal based on X.
+                        // We use match_env to propagate bindings if the solution is accepted.
 
-            // Solve sub_goal with distinct handler
-            var sub_goals = ArrayListUnmanaged(*Term){};
-            defer sub_goals.deinit(self.alloc);
-            try sub_goals.append(self.alloc, sub_goal);
-            try sub_goals.appendSlice(self.alloc, current_goals.items);
+                        const term = try copyTerm(ctx.alloc, ctx.template, match_env);
+                        const hash = term.hash(); // We need a hash function for Term
 
-            return self.solve(try sub_goals.toOwnedSlice(self.alloc), current_env, depth, scope_id, distinct_handler, writer);
-        }
-
-        if (goal.* == .structure and std.mem.eql(u8, goal.structure.functor, "is") and goal.structure.args.len == 2) {
-            const val = evaluate(goal.structure.args[1], current_env) catch {
-                return .Normal;
-            };
-            const val_term = switch (val) {
-                .int => |i| try Term.createNumber(self.alloc, i),
-                .float => |f| try Term.createFloat(self.alloc, f),
-            };
-            if (unify(self.alloc, goal.structure.args[0], val_term, current_env)) {
-                return self.solve(try current_goals.toOwnedSlice(self.alloc), current_env, depth, scope_id, handler, writer);
-            }
-            return .Normal;
-        }
-
-        if (goal.* == .structure and goal.structure.args.len == 2) {
-            const s = goal.structure;
-            var is_cmp = true;
-            var result = false;
-            if (std.mem.eql(u8, s.functor, ">")) {
-                const l = evaluate(s.args[0], current_env) catch return .Normal;
-                const r = evaluate(s.args[1], current_env) catch return .Normal;
-                result = l.toFloat() > r.toFloat();
-            } else if (std.mem.eql(u8, s.functor, "<")) {
-                const l = evaluate(s.args[0], current_env) catch return .Normal;
-                const r = evaluate(s.args[1], current_env) catch return .Normal;
-                result = l.toFloat() < r.toFloat();
-            } else if (std.mem.eql(u8, s.functor, ">=")) {
-                const l = evaluate(s.args[0], current_env) catch return .Normal;
-                const r = evaluate(s.args[1], current_env) catch return .Normal;
-                result = l.toFloat() >= r.toFloat();
-            } else if (std.mem.eql(u8, s.functor, "=<")) {
-                const l = evaluate(s.args[0], current_env) catch return .Normal;
-                const r = evaluate(s.args[1], current_env) catch return .Normal;
-                result = l.toFloat() <= r.toFloat();
-            } else if (std.mem.eql(u8, s.functor, "=")) {
-                result = unify(self.alloc, s.args[0], s.args[1], current_env);
-            } else if (std.mem.eql(u8, s.functor, "\\=")) {
-                // \= succeeds if unification FAILS
-                // We need to try unification on a CLONE of the environment to avoid side effects
-                var env_check = try current_env.clone(self.alloc);
-                defer env_check.deinit(self.alloc);
-                const unifies = unify(self.alloc, s.args[0], s.args[1], &env_check);
-                result = !unifies;
-            } else if (std.mem.eql(u8, s.functor, "=:=")) {
-                // =:= is arithmetic equality (evaluates both sides first)
-                const l = evaluate(s.args[0], current_env) catch return .Normal;
-                const r = evaluate(s.args[1], current_env) catch return .Normal;
-                result = l.toFloat() == r.toFloat();
-            } else if (std.mem.eql(u8, s.functor, "=\\=")) {
-                // =\= is arithmetic inequality (evaluates both sides first)
-                const l = evaluate(s.args[0], current_env) catch return .Normal;
-                const r = evaluate(s.args[1], current_env) catch return .Normal;
-                result = l.toFloat() != r.toFloat();
-            } else if (std.mem.eql(u8, s.functor, "->")) {
-                // If-then: (Cond -> Then)
-                // If Cond succeeds, execute Then; if Cond fails, the whole construct fails
-                const cond = s.args[0];
-                const then_branch = s.args[1];
-
-                // Try to prove the condition
-                const CondSuccess = error{ConditionSucceeded};
-                const cond_check = struct {
-                    fn handle(_: ?*anyopaque, _: EnvMap, _: *Engine) SolutionHandlerError!void {
-                        return CondSuccess.ConditionSucceeded;
+                        if (!ctx.seen.contains(hash)) {
+                            try ctx.seen.put(hash, {});
+                            try ctx.original_handler.handle(ctx.original_handler.context, match_env, ctx.engine);
+                        }
                     }
                 };
-                const cond_handler = SolutionHandler{ .context = null, .handle = cond_check.handle };
 
-                var cond_env = try current_env.clone(self.alloc);
-                defer cond_env.deinit(self.alloc);
+                var distinct_ctx = CollectorContext{
+                    .alloc = self.alloc,
+                    .template = template,
+                    .seen = seen,
+                    .original_handler = handler,
+                    .original_env = current_env,
+                    .engine = self,
+                };
 
-                var cond_goals = ArrayListUnmanaged(*Term){};
-                try cond_goals.append(self.alloc, cond);
+                const distinct_handler = SolutionHandler{
+                    .context = &distinct_ctx,
+                    .handle = wrapper.handle,
+                };
 
-                const cond_result = self.solve(try cond_goals.toOwnedSlice(self.alloc), &cond_env, depth + 1, scope_id, cond_handler, writer);
+                // Solve sub_goal with distinct handler
+                var sub_goals = ArrayListUnmanaged(*Term){};
+                defer sub_goals.deinit(self.alloc);
+                try sub_goals.append(self.alloc, sub_goal);
+                try sub_goals.appendSlice(self.alloc, current_goals.items);
 
-                if (cond_result) |_| {
-                    // Condition failed (no solutions found)
+                return self.solve(try sub_goals.toOwnedSlice(self.alloc), current_env, depth, scope_id, distinct_handler, writer);
+            }
+
+            if (goal.* == .structure and std.mem.eql(u8, goal.structure.functor, "is") and goal.structure.args.len == 2) {
+                const val = evaluate(goal.structure.args[1], current_env) catch {
                     return .Normal;
-                } else |err| {
-                    if (err == CondSuccess.ConditionSucceeded) {
-                        // Condition succeeded - commit to this choice and execute Then
-                        // Copy bindings from cond_env to current_env
-                        var it = cond_env.iterator();
-                        while (it.next()) |entry| {
-                            try current_env.put(self.alloc, entry.key_ptr.*, entry.value_ptr.*);
-                        }
-                        var then_goals = ArrayListUnmanaged(*Term){};
-                        try then_goals.append(self.alloc, then_branch);
-                        try then_goals.appendSlice(self.alloc, current_goals.items);
-                        return self.solve(try then_goals.toOwnedSlice(self.alloc), current_env, depth + 1, scope_id, handler, writer);
-                    }
-                    return err;
+                };
+                const val_term = switch (val) {
+                    .int => |i| try Term.createNumber(self.alloc, i),
+                    .float => |f| try Term.createFloat(self.alloc, f),
+                };
+                if (unify(self.alloc, goal.structure.args[0], val_term, current_env)) {
+                    return self.solve(try current_goals.toOwnedSlice(self.alloc), current_env, depth, scope_id, handler, writer);
                 }
-            } else if (std.mem.eql(u8, s.functor, ";")) {
-                // Check if this is if-then-else: (Cond -> Then ; Else)
-                const first_arg = s.args[0];
-                if (first_arg.* == .structure and std.mem.eql(u8, first_arg.structure.functor, "->") and first_arg.structure.args.len == 2) {
-                    // This is if-then-else
-                    const cond = first_arg.structure.args[0];
-                    const then_branch = first_arg.structure.args[1];
-                    const else_branch = s.args[1];
+                return .Normal;
+            }
+
+            if (goal.* == .structure and goal.structure.args.len == 2) {
+                const s = goal.structure;
+                var is_cmp = true;
+                var result = false;
+                if (std.mem.eql(u8, s.functor, ">")) {
+                    const l = evaluate(s.args[0], current_env) catch return .Normal;
+                    const r = evaluate(s.args[1], current_env) catch return .Normal;
+                    result = l.toFloat() > r.toFloat();
+                } else if (std.mem.eql(u8, s.functor, "<")) {
+                    const l = evaluate(s.args[0], current_env) catch return .Normal;
+                    const r = evaluate(s.args[1], current_env) catch return .Normal;
+                    result = l.toFloat() < r.toFloat();
+                } else if (std.mem.eql(u8, s.functor, ">=")) {
+                    const l = evaluate(s.args[0], current_env) catch return .Normal;
+                    const r = evaluate(s.args[1], current_env) catch return .Normal;
+                    result = l.toFloat() >= r.toFloat();
+                } else if (std.mem.eql(u8, s.functor, "=<")) {
+                    const l = evaluate(s.args[0], current_env) catch return .Normal;
+                    const r = evaluate(s.args[1], current_env) catch return .Normal;
+                    result = l.toFloat() <= r.toFloat();
+                } else if (std.mem.eql(u8, s.functor, "=")) {
+                    result = unify(self.alloc, s.args[0], s.args[1], current_env);
+                } else if (std.mem.eql(u8, s.functor, "\\=")) {
+                    // \= succeeds if unification FAILS
+                    // We need to try unification on a CLONE of the environment to avoid side effects
+                    var env_check = try current_env.clone(self.alloc);
+                    defer env_check.deinit(self.alloc);
+                    const unifies = unify(self.alloc, s.args[0], s.args[1], &env_check);
+                    result = !unifies;
+                } else if (std.mem.eql(u8, s.functor, "=:=")) {
+                    // =:= is arithmetic equality (evaluates both sides first)
+                    const l = evaluate(s.args[0], current_env) catch return .Normal;
+                    const r = evaluate(s.args[1], current_env) catch return .Normal;
+                    result = l.toFloat() == r.toFloat();
+                } else if (std.mem.eql(u8, s.functor, "=\\=")) {
+                    // =\= is arithmetic inequality (evaluates both sides first)
+                    const l = evaluate(s.args[0], current_env) catch return .Normal;
+                    const r = evaluate(s.args[1], current_env) catch return .Normal;
+                    result = l.toFloat() != r.toFloat();
+                } else if (std.mem.eql(u8, s.functor, "->")) {
+                    // If-then: (Cond -> Then)
+                    // If Cond succeeds, execute Then; if Cond fails, the whole construct fails
+                    const cond = s.args[0];
+                    const then_branch = s.args[1];
 
                     // Try to prove the condition
                     const CondSuccess = error{ConditionSucceeded};
@@ -543,14 +499,11 @@ pub const Engine = struct {
                     const cond_result = self.solve(try cond_goals.toOwnedSlice(self.alloc), &cond_env, depth + 1, scope_id, cond_handler, writer);
 
                     if (cond_result) |_| {
-                        // Condition failed - execute Else
-                        var else_goals = ArrayListUnmanaged(*Term){};
-                        try else_goals.append(self.alloc, else_branch);
-                        try else_goals.appendSlice(self.alloc, current_goals.items);
-                        return self.solve(try else_goals.toOwnedSlice(self.alloc), current_env, depth + 1, scope_id, handler, writer);
+                        // Condition failed (no solutions found)
+                        return .Normal;
                     } else |err| {
                         if (err == CondSuccess.ConditionSucceeded) {
-                            // Condition succeeded - commit and execute Then
+                            // Condition succeeded - commit to this choice and execute Then
                             // Copy bindings from cond_env to current_env
                             var it = cond_env.iterator();
                             while (it.next()) |entry| {
@@ -563,181 +516,228 @@ pub const Engine = struct {
                         }
                         return err;
                     }
+                } else if (std.mem.eql(u8, s.functor, ";")) {
+                    // Check if this is if-then-else: (Cond -> Then ; Else)
+                    const first_arg = s.args[0];
+                    if (first_arg.* == .structure and std.mem.eql(u8, first_arg.structure.functor, "->") and first_arg.structure.args.len == 2) {
+                        // This is if-then-else
+                        const cond = first_arg.structure.args[0];
+                        const then_branch = first_arg.structure.args[1];
+                        const else_branch = s.args[1];
+
+                        // Try to prove the condition
+                        const CondSuccess = error{ConditionSucceeded};
+                        const cond_check = struct {
+                            fn handle(_: ?*anyopaque, _: EnvMap, _: *Engine) SolutionHandlerError!void {
+                                return CondSuccess.ConditionSucceeded;
+                            }
+                        };
+                        const cond_handler = SolutionHandler{ .context = null, .handle = cond_check.handle };
+
+                        var cond_env = try current_env.clone(self.alloc);
+                        defer cond_env.deinit(self.alloc);
+
+                        var cond_goals = ArrayListUnmanaged(*Term){};
+                        try cond_goals.append(self.alloc, cond);
+
+                        const cond_result = self.solve(try cond_goals.toOwnedSlice(self.alloc), &cond_env, depth + 1, scope_id, cond_handler, writer);
+
+                        if (cond_result) |_| {
+                            // Condition failed - execute Else
+                            var else_goals = ArrayListUnmanaged(*Term){};
+                            try else_goals.append(self.alloc, else_branch);
+                            try else_goals.appendSlice(self.alloc, current_goals.items);
+                            return self.solve(try else_goals.toOwnedSlice(self.alloc), current_env, depth + 1, scope_id, handler, writer);
+                        } else |err| {
+                            if (err == CondSuccess.ConditionSucceeded) {
+                                // Condition succeeded - commit and execute Then
+                                // Copy bindings from cond_env to current_env
+                                var it = cond_env.iterator();
+                                while (it.next()) |entry| {
+                                    try current_env.put(self.alloc, entry.key_ptr.*, entry.value_ptr.*);
+                                }
+                                var then_goals = ArrayListUnmanaged(*Term){};
+                                try then_goals.append(self.alloc, then_branch);
+                                try then_goals.appendSlice(self.alloc, current_goals.items);
+                                return self.solve(try then_goals.toOwnedSlice(self.alloc), current_env, depth + 1, scope_id, handler, writer);
+                            }
+                            return err;
+                        }
+                    } else {
+                        // Regular disjunction: (A ; B)
+                        var env_a = try current_env.clone(self.alloc);
+                        defer env_a.deinit(self.alloc);
+                        var goals_a = ArrayListUnmanaged(*Term){};
+                        try goals_a.append(self.alloc, s.args[0]);
+                        try goals_a.appendSlice(self.alloc, current_goals.items);
+                        const res_a = try self.solve(try goals_a.toOwnedSlice(self.alloc), &env_a, depth + 1, scope_id, handler, writer);
+                        if (res_a != .Normal) return res_a;
+
+                        var env_b = try current_env.clone(self.alloc);
+                        defer env_b.deinit(self.alloc);
+                        var goals_b = ArrayListUnmanaged(*Term){};
+                        try goals_b.append(self.alloc, s.args[1]);
+                        try goals_b.appendSlice(self.alloc, current_goals.items);
+                        return self.solve(try goals_b.toOwnedSlice(self.alloc), &env_b, depth + 1, scope_id, handler, writer);
+                    }
                 } else {
-                    // Regular disjunction: (A ; B)
-                    var env_a = try current_env.clone(self.alloc);
-                    defer env_a.deinit(self.alloc);
-                    var goals_a = ArrayListUnmanaged(*Term){};
-                    try goals_a.append(self.alloc, s.args[0]);
-                    try goals_a.appendSlice(self.alloc, current_goals.items);
-                    const res_a = try self.solve(try goals_a.toOwnedSlice(self.alloc), &env_a, depth + 1, scope_id, handler, writer);
-                    if (res_a != .Normal) return res_a;
-
-                    var env_b = try current_env.clone(self.alloc);
-                    defer env_b.deinit(self.alloc);
-                    var goals_b = ArrayListUnmanaged(*Term){};
-                    try goals_b.append(self.alloc, s.args[1]);
-                    try goals_b.appendSlice(self.alloc, current_goals.items);
-                    return self.solve(try goals_b.toOwnedSlice(self.alloc), &env_b, depth + 1, scope_id, handler, writer);
+                    is_cmp = false;
                 }
-            } else {
-                is_cmp = false;
-            }
 
-            if (is_cmp) {
-                if (result) return self.solve(try current_goals.toOwnedSlice(self.alloc), current_env, depth, scope_id, handler, writer);
-                return .Normal;
-            }
-        }
-
-        if (goal.* == .structure and (std.mem.eql(u8, goal.structure.functor, "\\+") or std.mem.eql(u8, goal.structure.functor, "not"))) {
-            const NegationError = error{NegationFound};
-            const negation_check = struct {
-                fn handle(_: ?*anyopaque, _: EnvMap, _: *Engine) SolutionHandlerError!void {
-                    return NegationError.NegationFound;
-                }
-            };
-            const neg_handler = SolutionHandler{ .context = null, .handle = negation_check.handle };
-
-            var neg_env = try current_env.clone(self.alloc);
-            defer neg_env.deinit(self.alloc);
-
-            var neg_goals = ArrayListUnmanaged(*Term){};
-            try neg_goals.append(self.alloc, goal.structure.args[0]);
-
-            const res = self.solve(try neg_goals.toOwnedSlice(self.alloc), &neg_env, depth + 1, scope_id, neg_handler, writer);
-
-            if (res) |_| {
-                // solve returned .Normal (or .Cut), meaning NO solution was found (because if one was found, we would have errored).
-                // So negation SUCCEEDS.
-                return self.solve(try current_goals.toOwnedSlice(self.alloc), current_env, depth, scope_id, handler, writer);
-            } else |err| {
-                if (err == NegationError.NegationFound) {
-                    // Found a solution, so negation FAILS.
+                if (is_cmp) {
+                    if (result) return self.solve(try current_goals.toOwnedSlice(self.alloc), current_env, depth, scope_id, handler, writer);
                     return .Normal;
                 }
-                return err;
             }
-        }
 
-        if (goal.* == .structure and std.mem.eql(u8, goal.structure.functor, "write") and goal.structure.args.len == 1) {
-            const t = resolve(goal.structure.args[0], current_env);
-            try t.format("", .{}, writer);
-            return self.solve(try current_goals.toOwnedSlice(self.alloc), current_env, depth, scope_id, handler, writer);
-        }
+            if (goal.* == .structure and (std.mem.eql(u8, goal.structure.functor, "\\+") or std.mem.eql(u8, goal.structure.functor, "not"))) {
+                const NegationError = error{NegationFound};
+                const negation_check = struct {
+                    fn handle(_: ?*anyopaque, _: EnvMap, _: *Engine) SolutionHandlerError!void {
+                        return NegationError.NegationFound;
+                    }
+                };
+                const neg_handler = SolutionHandler{ .context = null, .handle = negation_check.handle };
 
-        if (goal.* == .atom and std.mem.eql(u8, goal.atom, "nl")) {
-            try writer.print("\n", .{});
-            return self.solve(try current_goals.toOwnedSlice(self.alloc), current_env, depth, scope_id, handler, writer);
-        }
+                var neg_env = try current_env.clone(self.alloc);
+                defer neg_env.deinit(self.alloc);
 
-        // format/1: format(FormatString)
-        if (goal.* == .structure and std.mem.eql(u8, goal.structure.functor, "format") and goal.structure.args.len == 1) {
-            const format_term = resolve(goal.structure.args[0], current_env);
-            const format_str = try self.termToString(format_term);
-            defer self.alloc.free(format_str);
+                var neg_goals = ArrayListUnmanaged(*Term){};
+                try neg_goals.append(self.alloc, goal.structure.args[0]);
 
-            try self.processFormat(format_str, &[_]*Term{}, current_env, writer);
-            return self.solve(try current_goals.toOwnedSlice(self.alloc), current_env, depth, scope_id, handler, writer);
-        }
+                const res = self.solve(try neg_goals.toOwnedSlice(self.alloc), &neg_env, depth + 1, scope_id, neg_handler, writer);
 
-        // format/2: format(FormatString, Arguments)
-        if (goal.* == .structure and std.mem.eql(u8, goal.structure.functor, "format") and goal.structure.args.len == 2) {
-            const format_term = resolve(goal.structure.args[0], current_env);
-            const format_str = try self.termToString(format_term);
-            defer self.alloc.free(format_str);
+                if (res) |_| {
+                    // solve returned .Normal (or .Cut), meaning NO solution was found (because if one was found, we would have errored).
+                    // So negation SUCCEEDS.
+                    return self.solve(try current_goals.toOwnedSlice(self.alloc), current_env, depth, scope_id, handler, writer);
+                } else |err| {
+                    if (err == NegationError.NegationFound) {
+                        // Found a solution, so negation FAILS.
+                        return .Normal;
+                    }
+                    return err;
+                }
+            }
 
-            const args_term = resolve(goal.structure.args[1], current_env);
-            const args = try self.termToList(args_term, current_env);
-            defer self.alloc.free(args);
+            if (goal.* == .structure and std.mem.eql(u8, goal.structure.functor, "write") and goal.structure.args.len == 1) {
+                const t = resolve(goal.structure.args[0], current_env);
+                try t.format("", .{}, writer);
+                return self.solve(try current_goals.toOwnedSlice(self.alloc), current_env, depth, scope_id, handler, writer);
+            }
 
-            try self.processFormat(format_str, args, current_env, writer);
-            return self.solve(try current_goals.toOwnedSlice(self.alloc), current_env, depth, scope_id, handler, writer);
-        }
+            if (goal.* == .atom and std.mem.eql(u8, goal.atom, "nl")) {
+                try writer.print("\n", .{});
+                return self.solve(try current_goals.toOwnedSlice(self.alloc), current_env, depth, scope_id, handler, writer);
+            }
 
-        if (goal.* == .atom and std.mem.eql(u8, goal.atom, "true")) {
-            return self.solve(try current_goals.toOwnedSlice(self.alloc), current_env, depth, scope_id, handler, writer);
-        }
+            // format/1: format(FormatString)
+            if (goal.* == .structure and std.mem.eql(u8, goal.structure.functor, "format") and goal.structure.args.len == 1) {
+                const format_term = resolve(goal.structure.args[0], current_env);
+                const format_str = try self.termToString(format_term);
+                defer self.alloc.free(format_str);
 
-        if (goal.* == .atom and (std.mem.eql(u8, goal.atom, "false") or std.mem.eql(u8, goal.atom, "fail"))) {
+                try self.processFormat(format_str, &[_]*Term{}, current_env, writer);
+                return self.solve(try current_goals.toOwnedSlice(self.alloc), current_env, depth, scope_id, handler, writer);
+            }
+
+            // format/2: format(FormatString, Arguments)
+            if (goal.* == .structure and std.mem.eql(u8, goal.structure.functor, "format") and goal.structure.args.len == 2) {
+                const format_term = resolve(goal.structure.args[0], current_env);
+                const format_str = try self.termToString(format_term);
+                defer self.alloc.free(format_str);
+
+                const args_term = resolve(goal.structure.args[1], current_env);
+                const args = try self.termToList(args_term, current_env);
+                defer self.alloc.free(args);
+
+                try self.processFormat(format_str, args, current_env, writer);
+                return self.solve(try current_goals.toOwnedSlice(self.alloc), current_env, depth, scope_id, handler, writer);
+            }
+
+            if (goal.* == .atom and std.mem.eql(u8, goal.atom, "true")) {
+                return self.solve(try current_goals.toOwnedSlice(self.alloc), current_env, depth, scope_id, handler, writer);
+            }
+
+            if (goal.* == .atom and (std.mem.eql(u8, goal.atom, "false") or std.mem.eql(u8, goal.atom, "fail"))) {
+                return .Normal;
+            }
+
+            if (goal.* == .atom and std.mem.eql(u8, goal.atom, "repeat")) {
+                // repeat/0 always succeeds and provides infinite choice points
+                // Try to solve remaining goals repeatedly until cut
+                while (true) {
+                    var env_clone = try current_env.clone(self.alloc);
+                    defer env_clone.deinit(self.alloc);
+                    var goals_clone = ArrayListUnmanaged(*Term){};
+                    try goals_clone.appendSlice(self.alloc, current_goals.items);
+                    const result = try self.solve(try goals_clone.toOwnedSlice(self.alloc), &env_clone, depth, scope_id, handler, writer);
+                    // If cut, stop repeating
+                    if (result != .Normal) return result;
+                    // Otherwise, keep repeating (backtrack to repeat)
+                }
+            }
+
+            // Use indexing to get candidate clauses
+            var candidates = try self.index.getCandidates(goal);
+            defer candidates.deinit(self.alloc);
+
+            // OPTIMIZATION: Choice Point Elimination
+            // If there's only one candidate, we don't need to clone the environment
+            // for backtracking since there's nothing to backtrack to.
+            const is_deterministic = candidates.items.len == 1;
+
+            for (candidates.items) |clause_idx| {
+                const rule = self.db.items[clause_idx];
+
+                // For deterministic clauses, use the environment directly (no clone)
+                // For non-deterministic, clone for backtracking
+                var env_storage = if (!is_deterministic) try current_env.clone(self.alloc) else EnvMap{};
+                defer if (!is_deterministic) env_storage.deinit(self.alloc);
+
+                const new_env = if (is_deterministic) current_env else &env_storage;
+
+                // Rename variables in rule to avoid clashes.
+                // Use a combination of depth and rule index to generate a unique suffix for this instantiation.
+                const suffix = depth * 10000 + clause_idx;
+
+                const fresh_head = try copyTermWithSuffix(self.alloc, rule.head, suffix);
+
+                if (unify(self.alloc, goal, fresh_head, new_env)) {
+                    var next_goals = ArrayListUnmanaged(*Term){};
+
+                    // Add body goals
+                    for (rule.body) |b_term| {
+                        try next_goals.append(self.alloc, try copyTermWithSuffix(self.alloc, b_term, suffix));
+                    }
+
+                    // Add $end_scope marker
+                    const new_scope_id = suffix + 1;
+                    const end_scope_term = try Term.createStructure(self.alloc, "$end_scope", &[_]*Term{ try Term.createNumber(self.alloc, @intCast(new_scope_id)), try Term.createNumber(self.alloc, @intCast(scope_id)) });
+                    try next_goals.append(self.alloc, end_scope_term);
+
+                    // Add remaining goals
+                    for (current_goals.items) |rem_g| {
+                        try next_goals.append(self.alloc, rem_g);
+                    }
+
+                    const res = try self.solve(try next_goals.toOwnedSlice(self.alloc), new_env, depth + 1, new_scope_id, handler, writer);
+
+                    switch (res) {
+                        .Normal => {}, // Continue to next rule
+                        .Cut => |cut_scope| {
+                            if (cut_scope == new_scope_id) {
+                                // Cut was for this rule, stop trying other rules
+                                return .Normal;
+                            } else {
+                                // Cut is for a parent scope, propagate
+                                return .{ .Cut = cut_scope };
+                            }
+                        },
+                    }
+                }
+            }
             return .Normal;
-        }
-
-        if (goal.* == .atom and std.mem.eql(u8, goal.atom, "repeat")) {
-            // repeat/0 always succeeds and provides infinite choice points
-            // Try to solve remaining goals repeatedly until cut
-            while (true) {
-                var env_clone = try current_env.clone(self.alloc);
-                defer env_clone.deinit(self.alloc);
-                var goals_clone = ArrayListUnmanaged(*Term){};
-                try goals_clone.appendSlice(self.alloc, current_goals.items);
-                const result = try self.solve(try goals_clone.toOwnedSlice(self.alloc), &env_clone, depth, scope_id, handler, writer);
-                // If cut, stop repeating
-                if (result != .Normal) return result;
-                // Otherwise, keep repeating (backtrack to repeat)
-            }
-        }
-
-        // Use indexing to get candidate clauses
-        var candidates = try self.index.getCandidates(goal);
-        defer candidates.deinit(self.alloc);
-
-        // OPTIMIZATION: Choice Point Elimination
-        // If there's only one candidate, we don't need to clone the environment
-        // for backtracking since there's nothing to backtrack to.
-        const is_deterministic = candidates.items.len == 1;
-
-        for (candidates.items) |clause_idx| {
-            const rule = self.db.items[clause_idx];
-
-            // For deterministic clauses, use the environment directly (no clone)
-            // For non-deterministic, clone for backtracking
-            var env_storage = if (!is_deterministic) try current_env.clone(self.alloc) else EnvMap{};
-            defer if (!is_deterministic) env_storage.deinit(self.alloc);
-
-            const new_env = if (is_deterministic) current_env else &env_storage;
-
-            // Rename variables in rule to avoid clashes.
-            // Use a combination of depth and rule index to generate a unique suffix for this instantiation.
-            const suffix = depth * 10000 + clause_idx;
-
-            const fresh_head = try copyTermWithSuffix(self.alloc, rule.head, suffix);
-
-            if (unify(self.alloc, goal, fresh_head, new_env)) {
-                var next_goals = ArrayListUnmanaged(*Term){};
-
-                // Add body goals
-                for (rule.body) |b_term| {
-                    try next_goals.append(self.alloc, try copyTermWithSuffix(self.alloc, b_term, suffix));
-                }
-
-                // Add $end_scope marker
-                const new_scope_id = suffix + 1;
-                const end_scope_term = try Term.createStructure(self.alloc, "$end_scope", &[_]*Term{ try Term.createNumber(self.alloc, @intCast(new_scope_id)), try Term.createNumber(self.alloc, @intCast(scope_id)) });
-                try next_goals.append(self.alloc, end_scope_term);
-
-                // Add remaining goals
-                for (current_goals.items) |rem_g| {
-                    try next_goals.append(self.alloc, rem_g);
-                }
-
-                const res = try self.solve(try next_goals.toOwnedSlice(self.alloc), new_env, depth + 1, new_scope_id, handler, writer);
-
-                switch (res) {
-                    .Normal => {}, // Continue to next rule
-                    .Cut => |cut_scope| {
-                        if (cut_scope == new_scope_id) {
-                            // Cut was for this rule, stop trying other rules
-                            return .Normal;
-                        } else {
-                            // Cut is for a parent scope, propagate
-                            return .{ .Cut = cut_scope };
-                        }
-                    },
-                }
-            }
-        }
-        return .Normal;
         } // end while (true) - Tail-Call Optimization loop
     }
 };

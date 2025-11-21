@@ -76,35 +76,35 @@ fn getStyleForToken(tag: TokenType) ?[*:0]const u8 {
         .string => "gold",
 
         // Operators and punctuation
-        .turnstile => "cyan",          // :-
-        .arrow => "cyan",              // -->
-        .if_then => "cyan",            // ->
-        .lparen, .rparen => null,      // default color
+        .turnstile => "cyan", // :-
+        .arrow => "cyan", // -->
+        .if_then => "cyan", // ->
+        .lparen, .rparen => null, // default color
         .lbracket, .rbracket => "dodgerblue",
-        .lbrace, .rbrace => null,      // default color
-        .bar => "dodgerblue",          // | (list separator)
-        .comma => null,                // default color
-        .period => null,               // default color
-        .semicolon => "cyan",          // ; (disjunction)
-        .not => "red",                 // \+ (negation)
-        .is => "cyan",                 // is
+        .lbrace, .rbrace => null, // default color
+        .bar => "dodgerblue", // | (list separator)
+        .comma => null, // default color
+        .period => null, // default color
+        .semicolon => "cyan", // ; (disjunction)
+        .not => "red", // \+ (negation)
+        .is => "cyan", // is
 
         // Comparison operators
-        .equal => "cyan",              // =
-        .not_equal => "cyan",          // \=
-        .arith_equal => "cyan",        // =:=
-        .arith_not_equal => "cyan",    // =\=
-        .less => "cyan",               // <
-        .greater => "cyan",            // >
-        .less_equal => "cyan",         // =<
-        .greater_equal => "cyan",      // >=
+        .equal => "cyan", // =
+        .not_equal => "cyan", // \=
+        .arith_equal => "cyan", // =:=
+        .arith_not_equal => "cyan", // =\=
+        .less => "cyan", // <
+        .greater => "cyan", // >
+        .less_equal => "cyan", // =<
+        .greater_equal => "cyan", // >=
 
         // Arithmetic operators
         .plus => "cyan",
         .minus => "cyan",
         .mul => "cyan",
         .div => "cyan",
-        .int_div => "cyan",            // // (integer division)
+        .int_div => "cyan", // // (integer division)
 
         // Default/unknown
         .eof => null,

@@ -21,7 +21,7 @@ pub fn init(history_file: ?[]const u8, max_entries: i32) !void {
 pub fn readline(prompt: [:0]const u8) ?[]const u8 {
     const line_ptr = c.ic_readline(prompt.ptr);
     if (line_ptr == null) return null;
-    
+
     const len = std.mem.len(line_ptr);
     return line_ptr[0..len];
 }

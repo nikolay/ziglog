@@ -37,8 +37,8 @@ fn isCommandChar(s: [*c]const u8, len: c_long) callconv(std.builtin.CallingConve
     if (len <= 0) return false;
     const char = s[0];
     return (char >= 'a' and char <= 'z') or
-           (char >= 'A' and char <= 'Z') or
-           char == '_';
+        (char >= 'A' and char <= 'Z') or
+        char == '_';
 }
 
 // Custom completer for ziglog REPL

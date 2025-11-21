@@ -36,7 +36,9 @@
       "Bash(./test_highlight.sh:*)",
       "Bash(./test_completion.sh)",
       "Bash(for file in /Users/nikolay/Code/nikolay/ziglog/src/*.zig)",
-      "Bash(./scripts/update-isocline.sh:*)"
+      "Bash(./scripts/update-isocline.sh:*)",
+      "Bash(zig fmt:*)",
+      "Bash(git add:*)"
     ],
     "deny": [],
     "ask": []
