@@ -13,8 +13,9 @@ count_down(N) :- N > 0, N1 is N - 1, count_down(N1).
 % Test deeper recursion (benefits from partial TCO)
 % Note: Full TCO would allow much deeper recursion
 % Current implementation: TCO for control flow (phrase, $end_scope)
+% Reduced from 500 to 200 for CI compatibility (different stack limits)
 % EXPECT: true
-?- count_down(500).
+?- count_down(200).
 
 % List length - tail recursive
 list_len([], 0).

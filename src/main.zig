@@ -6,7 +6,14 @@ const isocline = @import("isocline_wrapper.zig");
 const highlighter = @import("highlighter.zig");
 
 fn rawPrint(text: []const u8) !void {
-    _ = try std.posix.write(std.posix.STDOUT_FILENO, text);
+    const builtin = @import("builtin");
+    if (builtin.os.tag == .windows) {
+        const windows = std.os.windows;
+        const handle = windows.GetStdHandle(windows.STD_OUTPUT_HANDLE) catch return error.StdoutUnavailable;
+        _ = try windows.WriteFile(handle, text, null);
+    } else {
+        _ = try std.posix.write(std.posix.STDOUT_FILENO, text);
+    }
 }
 
 // Command completer - called by ic_complete_word for REPL commands
@@ -233,17 +240,17 @@ const StdOutWriter = struct {
     pub fn print(_: StdOutWriter, comptime fmt: []const u8, args: anytype) Error!void {
         var buf: [4096]u8 = undefined;
         const slice = std.fmt.bufPrint(&buf, fmt, args) catch return error.SystemResources;
-        _ = std.posix.write(std.posix.STDOUT_FILENO, slice) catch return error.SystemResources;
+        rawPrint(slice) catch return error.SystemResources;
     }
 
     pub fn writeAll(_: StdOutWriter, bytes: []const u8) Error!void {
-        _ = std.posix.write(std.posix.STDOUT_FILENO, bytes) catch return error.SystemResources;
+        rawPrint(bytes) catch return error.SystemResources;
     }
 
     pub fn writeByteNTimes(_: StdOutWriter, byte: u8, n: usize) Error!void {
         var i: usize = 0;
         while (i < n) : (i += 1) {
-            _ = std.posix.write(std.posix.STDOUT_FILENO, &[_]u8{byte}) catch return error.SystemResources;
+            rawPrint(&[_]u8{byte}) catch return error.SystemResources;
         }
     }
 };
