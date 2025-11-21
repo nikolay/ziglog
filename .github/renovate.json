@@ -19,7 +19,7 @@
       ],
       "groupName": "Zig",
       "automerge": false,
-      "stabilityDays": 3,
+      "minimumReleaseAge": "3 days",
       "prPriority": 10
     },
     {
@@ -34,7 +34,7 @@
         "minor",
         "patch"
       ],
-      "stabilityDays": 3
+      "minimumReleaseAge": "3 days"
     }
   ],
   "vulnerabilityAlerts": {
@@ -60,8 +60,8 @@
     {
       "customType": "regex",
       "description": "Update Zig version in workflows",
-      "fileMatch": [
-        "^\\.github/workflows/.*\\.ya?ml$"
+      "managerFilePatterns": [
+        "/^\\.github/workflows/.*\\.ya?ml$/"
       ],
       "matchStrings": [
         "version:\\s*['\"]?(?<currentValue>\\d+\\.\\d+\\.\\d+)['\"]?\\s*(?:#.*)?\\n"
@@ -73,9 +73,9 @@
     {
       "customType": "regex",
       "description": "Update Zig version in README",
-      "fileMatch": [
-        "^README\\.md$",
-        "^CLAUDE\\.md$"
+      "managerFilePatterns": [
+        "/^README\\.md$/",
+        "/^CLAUDE\\.md$/"
       ],
       "matchStrings": [
         "Zig\\s+(?<currentValue>\\d+\\.\\d+\\.\\d+)"
