@@ -21,10 +21,17 @@ pub fn build(b: *std.Build) void {
         "src/isocline/isocline.c",
     };
 
+    // Determine C flags based on target platform
+    // _XOPEN_SOURCE is only needed on POSIX systems (not Windows)
+    const c_flags = if (target.result.os.tag == .windows)
+        &[_][]const u8{"-std=c99"}
+    else
+        &[_][]const u8{ "-std=c99", "-D_XOPEN_SOURCE=700" };
+
     for (isocline_sources) |src| {
         exe.addCSourceFile(.{
             .file = b.path(src),
-            .flags = &[_][]const u8{ "-std=c99", "-D_XOPEN_SOURCE=700" },
+            .flags = c_flags,
         });
     }
 
