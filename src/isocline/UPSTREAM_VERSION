@@ -1,0 +1,17 @@
+Isocline version: 104 (1.0.4)
+Upstream: https://github.com/daanx/isocline
+Branch: main
+Last updated: 2024-11-20
+
+Update script: scripts/update-isocline.sh
+
+Local modifications:
+- common.h: Custom configuration
+- completers.c: Ziglog-specific completions
+- completions.c: REPL command completion
+- env.h: Environment variable handling
+- history.c: History file format customizations
+- isocline.c: Integration glue
+- undo.c: Undo/redo behavior
+
+Note: Modified files have timestamps from Nov 20-23, 2024

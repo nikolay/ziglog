@@ -1,0 +1,136 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release'
+        required: true
+        type: string
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux x86_64
+          - os: ubuntu-latest
+            target: x86_64-linux
+            zig_target: x86_64-linux-gnu
+            artifact_name: ziglog-linux-x86_64
+
+          # Linux aarch64 (ARM64)
+          - os: ubuntu-latest
+            target: aarch64-linux
+            zig_target: aarch64-linux-gnu
+            artifact_name: ziglog-linux-aarch64
+
+          # macOS x86_64 (Intel)
+          - os: macos-latest
+            target: x86_64-macos
+            zig_target: x86_64-macos
+            artifact_name: ziglog-macos-x86_64
+
+          # macOS aarch64 (Apple Silicon)
+          - os: macos-latest
+            target: aarch64-macos
+            zig_target: aarch64-macos
+            artifact_name: ziglog-macos-aarch64
+
+          # Windows x86_64
+          - os: windows-latest
+            target: x86_64-windows
+            zig_target: x86_64-windows-gnu
+            artifact_name: ziglog-windows-x86_64
+            exe_ext: .exe
+
+          # Windows aarch64 (ARM64)
+          - os: windows-latest
+            target: aarch64-windows
+            zig_target: aarch64-windows-gnu
+            artifact_name: ziglog-windows-aarch64
+            exe_ext: .exe
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Zig
+        uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: 0.15.2
+
+      - name: Run tests (native builds only)
+        if: |
+          (matrix.target == 'x86_64-linux' && runner.os == 'Linux') ||
+          (matrix.target == 'x86_64-macos' && runner.os == 'macOS') ||
+          (matrix.target == 'x86_64-windows' && runner.os == 'Windows')
+        run: |
+          zig build test
+          zig build test-integration
+
+      - name: Build release binary
+        run: |
+          zig build -Doptimize=ReleaseSafe -Dtarget=${{ matrix.zig_target }}
+
+      - name: Prepare artifact (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          mkdir -p dist
+          cp zig-out/bin/ziglog dist/ziglog
+          cp README.md dist/
+          cp LICENSE dist/ || echo "No LICENSE file"
+          cd dist
+          tar -czf ../${{ matrix.artifact_name }}.tar.gz *
+
+      - name: Prepare artifact (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          mkdir dist
+          copy zig-out\bin\ziglog.exe dist\ziglog.exe
+          copy README.md dist\
+          if exist LICENSE copy LICENSE dist\
+          cd dist
+          tar -czf ..\${{ matrix.artifact_name }}.tar.gz *
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_name }}.tar.gz
+          retention-days: 7
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Display structure
+        run: ls -R artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            artifacts/**/*.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,59 @@
+# EditorConfig for ziglog - Prolog interpreter in Zig
+# https://editorconfig.org
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# Zig source files
+[*.zig]
+indent_style = space
+indent_size = 4
+max_line_length = 100
+
+# Zig build files
+[build.zig]
+indent_style = space
+indent_size = 4
+
+[build.zig.zon]
+indent_style = space
+indent_size = 4
+
+# C/C++ source files
+[*.{c,h,cpp,cxx,cc,hpp,hxx}]
+indent_style = space
+indent_size = 4
+max_line_length = 100
+
+# Prolog test files
+[*.pl]
+indent_style = space
+indent_size = 2
+max_line_length = 80
+
+# Markdown documentation
+[*.md]
+indent_style = space
+indent_size = 2
+trim_trailing_whitespace = false
+max_line_length = 100
+
+# YAML/JSON configuration
+[*.{yml,yaml,json}]
+indent_style = space
+indent_size = 2
+
+# Shell scripts
+[*.sh]
+indent_style = space
+indent_size = 2
+end_of_line = lf
+
+# Makefiles require tabs
+[Makefile]
+indent_style = tab

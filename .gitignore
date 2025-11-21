@@ -1,0 +1,32 @@
+# Zig build artifacts
+.zig-cache/
+zig-out/
+zig-cache/
+build/
+
+# IDE / Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Test artifacts
+*.log
+test-results/
+
+# REPL history
+.ziglog_history
+
+# Release artifacts
+dist/
+*.tar.gz
+*.zip
+
+# Dependency update backups
+src/isocline.backup.*
