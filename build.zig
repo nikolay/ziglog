@@ -1,8 +1,12 @@
 const std = @import("std");
+const zon = @import("build.zig.zon");
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
+
+    // Get version from build.zig.zon
+    const version: []const u8 = zon.version;
 
     const exe_mod = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
@@ -10,12 +14,17 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    // Add build options module with version
+    const options = b.addOptions();
+    options.addOption([]const u8, "version", version);
+    exe_mod.addOptions("build_options", options);
+
     const exe = b.addExecutable(.{
         .name = "ziglog",
         .root_module = exe_mod,
     });
 
-    // Add isocline C library (pure C, much simpler than replxx!)
+    // Add isocline C library (pure C readline alternative)
     // Note: isocline.c includes all other files, so we only compile that one!
     // isocline.c already defines _XOPEN_SOURCE internally, so we don't need to add it
     const isocline_sources = [_][]const u8{
@@ -23,14 +32,14 @@ pub fn build(b: *std.Build) void {
     };
 
     for (isocline_sources) |src| {
-        exe.addCSourceFile(.{
+        exe_mod.addCSourceFile(.{
             .file = b.path(src),
             .flags = &[_][]const u8{"-std=c99"},
         });
     }
 
-    exe.addIncludePath(b.path("src/isocline"));
-    exe.linkLibC();
+    exe_mod.addIncludePath(b.path("src/isocline"));
+    exe_mod.link_libc = true;
 
     b.installArtifact(exe);
 

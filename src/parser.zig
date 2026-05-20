@@ -36,6 +36,7 @@ pub const Parser = struct {
         Comparison,
         Sum,
         Product,
+        Power,
         Prefix,
         Call,
         fn int(self: Precedence) u8 {
@@ -46,10 +47,11 @@ pub const Parser = struct {
     fn getPrecedence(tag: TokenType) Precedence {
         return switch (tag) {
             .semicolon => .LogicOr,
-            .if_then => .IfThen,
+            .if_then, .soft_cut => .IfThen,
             .equal, .greater, .less, .greater_equal, .less_equal, .not_equal, .arith_equal, .arith_not_equal, .is => .Comparison,
             .plus, .minus => .Sum,
             .mul, .div, .int_div => .Product,
+            .power => .Power,
             .lparen => .Call,
             else => .Lowest,
         };
@@ -161,7 +163,8 @@ pub const Parser = struct {
             std.mem.eql(u8, value, "mod") or
             std.mem.eql(u8, value, "rem") or
             std.mem.eql(u8, value, "min") or
-            std.mem.eql(u8, value, "max");
+            std.mem.eql(u8, value, "max") or
+            std.mem.eql(u8, value, "=..");
     }
 
     pub fn parseTerm(self: *Parser) ParseError!*Term {
@@ -176,7 +179,7 @@ pub const Parser = struct {
 
             // Check if next token is an infix operator (including special atoms)
             const is_infix_op = switch (tok.tag) {
-                .plus, .minus, .mul, .div, .int_div, .greater, .less, .greater_equal, .less_equal, .not_equal, .equal, .arith_equal, .arith_not_equal, .is, .semicolon, .if_then => true,
+                .plus, .minus, .mul, .div, .int_div, .power, .greater, .less, .greater_equal, .less_equal, .not_equal, .equal, .arith_equal, .arith_not_equal, .is, .semicolon, .if_then, .soft_cut => true,
                 .atom => isInfixAtom(tok.value),
                 else => false,
             };
@@ -192,7 +195,7 @@ pub const Parser = struct {
 
             _ = self.lexer.next();
             const right = try self.parseExpression(op_prec);
-            var args = std.ArrayListUnmanaged(*Term){};
+            var args: std.ArrayListUnmanaged(*Term) = .empty;
             try args.append(self.alloc, left);
             try args.append(self.alloc, right);
             left = try Term.createStructure(self.alloc, tok.value, try args.toOwnedSlice(self.alloc));
@@ -270,7 +273,7 @@ pub const Parser = struct {
             },
             .not => {
                 const right = try self.parseExpression(.Prefix);
-                var args = std.ArrayListUnmanaged(*Term){};
+                var args: std.ArrayListUnmanaged(*Term) = .empty;
                 try args.append(self.alloc, right);
                 return try Term.createStructure(self.alloc, "\\+", try args.toOwnedSlice(self.alloc));
             },
@@ -299,7 +302,7 @@ pub const Parser = struct {
             tail = try Term.createAtom(self.alloc, "[]");
         }
 
-        var args = std.ArrayListUnmanaged(*Term){};
+        var args: std.ArrayListUnmanaged(*Term) = .empty;
         try args.append(self.alloc, head);
         try args.append(self.alloc, tail);
         return try Term.createStructure(self.alloc, ".", try args.toOwnedSlice(self.alloc));
@@ -308,7 +311,7 @@ pub const Parser = struct {
     fn parseAtomOrStructure(self: *Parser, name: []const u8) ParseError!*Term {
         if (self.lexer.peek().tag == .lparen) {
             _ = self.lexer.next();
-            var args = std.ArrayListUnmanaged(*Term){};
+            var args: std.ArrayListUnmanaged(*Term) = .empty;
             try args.append(self.alloc, try self.parseTerm());
             while (self.lexer.peek().tag == .comma) {
                 _ = self.lexer.next();
@@ -322,7 +325,7 @@ pub const Parser = struct {
 
     pub fn parseRule(self: *Parser) ParseError!Rule {
         const head = try self.parseTerm();
-        var body = std.ArrayListUnmanaged(*Term){};
+        var body: std.ArrayListUnmanaged(*Term) = .empty;
         const next_tok = self.lexer.next();
         if (next_tok.tag == .period) {
             return Rule{ .head = head, .body = try body.toOwnedSlice(self.alloc) };
@@ -344,7 +347,7 @@ pub const Parser = struct {
             // But for DCG expansion, it's easier to treat the body as a single term (conjunction) first, or expand term by term.
             // Let's parse the body terms first.
 
-            var dcg_body_terms = std.ArrayListUnmanaged(*Term){};
+            var dcg_body_terms: std.ArrayListUnmanaged(*Term) = .empty;
             try dcg_body_terms.append(self.alloc, try self.parseTerm());
             while (self.lexer.peek().tag == .comma) {
                 _ = self.lexer.next();
@@ -374,7 +377,7 @@ pub const Parser = struct {
             var current_S = S0;
 
             // 3. Expand body terms
-            var expanded_body = std.ArrayListUnmanaged(*Term){};
+            var expanded_body: std.ArrayListUnmanaged(*Term) = .empty;
 
             for (dcg_body_terms.items) |term| {
                 const next_S = try createVar(self.alloc, var_counter);
@@ -486,7 +489,7 @@ pub const Parser = struct {
     }
 
     pub fn parseQuery(self: *Parser) ParseError![]*Term {
-        var goals = std.ArrayListUnmanaged(*Term){};
+        var goals: std.ArrayListUnmanaged(*Term) = .empty;
         try goals.append(self.alloc, try self.parseTerm());
         while (self.lexer.peek().tag == .comma) {
             _ = self.lexer.next();

@@ -15,8 +15,8 @@ Ziglog is a Prolog-like logic programming language interpreter featuring:
 - **Full arithmetic**: Integer and floating-point arithmetic with automatic type promotion
 - **Unicode support**: Full UTF-8 support with SWI-Prolog-compatible character escape sequences
 - **Performance optimizations**: First-argument indexing, choice point elimination, partial tail-call optimization
-- **Interactive REPL**: Full-featured read-eval-print loop with live syntax highlighting, tab completion, syntax hints, and command history (powered by replxx)
-- **Comprehensive testing**: 67 unit tests + 311 integration tests across 16 test files
+- **Interactive REPL**: Full-featured read-eval-print loop with live syntax highlighting, tab completion, syntax hints, and command history (powered by isocline)
+- **Comprehensive testing**: 84 unit tests + 512 integration tests across 22 test files
 
 ## Quick Start
 
@@ -381,7 +381,9 @@ X = 7.5
 div             % Floored division (rounds towards -infinity, int only)
 mod             % Modulo (uses floored division, int only)
 rem             % Remainder (uses truncated division, int only)
-min, max        % Minimum and maximum (works with mixed types)
+**, ^           % Power (exponentiation, returns float)
+atan2(Y, X)     % Two-argument arctangent (returns float, result in radians)
+min, max        % Minimum and maximum (ISO: preserves type of winning value)
 
 % Integer examples:
 ?- X is 5 + 3.
@@ -400,19 +402,45 @@ X = 4.0
 ?- Y is 7.0 / 2.0.
 Y = 3.5
 
-% Mixed type examples:
+% Mixed type examples (ISO: preserves type of winner):
 ?- M is min(5, 2.5).
-M = 2.5
+M = 2.5    % Float wins, returns float
 
-?- N is max(3.14, 2).
-N = 3.14
+?- N is max(3, 2.5).
+N = 3      % Integer wins, returns integer
+
+% Power operator:
+?- X is 2 ** 3.
+X = 8.0
+
+?- X is 9 ** 0.5.
+X = 3.0    % Square root via fractional exponent
+
+% Two-argument arctangent (atan2):
+?- X is atan2(1, 1).
+X = 0.7853981633974483  % pi/4 (45 degrees)
+
+?- X is atan2(1, 0).
+X = 1.5707963267948966  % pi/2 (90 degrees)
 ```
 
 **Unary Operators:**
 
 ```prolog
-abs(X)    % Absolute value (preserves type)
-sign(X)   % Returns -1, 0, or 1 (preserves type)
+abs(X)           % Absolute value (preserves type)
+sign(X)          % Returns -1, 0, or 1 (preserves type)
+floor(X)         % Round down to integer
+ceiling(X)       % Round up to integer
+round(X)         % Round to nearest integer
+truncate(X)      % Truncate towards zero (remove decimal part)
+float(X)         % Convert to float
+sqrt(X)          % Square root (returns float)
+exp(X)           % e^X (returns float)
+log(X)           % Natural logarithm (returns float)
+sin(X)           % Sine (returns float, X in radians)
+cos(X)           % Cosine (returns float, X in radians)
+tan(X)           % Tangent (returns float, X in radians)
+atan(X)          % Arctangent (returns float, result in radians)
 
 % Integer examples:
 ?- X is abs(-42).
@@ -427,6 +455,39 @@ X = 3.14
 
 ?- S is sign(-3.14).
 S = -1.0
+
+% Rounding functions:
+?- X is floor(3.7).
+X = 3
+
+?- X is ceiling(3.2).
+X = 4
+
+?- X is round(3.5).
+X = 4
+
+?- X is truncate(-3.7).
+X = -3
+
+% Math functions:
+?- X is sqrt(16).
+X = 4.0
+
+?- X is exp(1).
+X = 2.718281828459045
+
+?- X is log(2.718281828459045).
+X = 1.0
+
+% Trigonometric functions (radians):
+?- X is sin(0).
+X = 0.0
+
+?- X is cos(0).
+X = 1.0
+
+?- X is atan(1).
+X = 0.7853981633974483  % pi/4
 ```
 
 **Using in rules:**
@@ -499,6 +560,91 @@ true.
 ?- 3.0 >= 3.
 true.
 ```
+
+#### Occurs Check and Sound Unification
+
+Ziglog provides ISO Prolog predicates for sound unification that prevents creating cyclic (infinite) data structures.
+
+**`unify_with_occurs_check/2`** - Sound unification with occurs check
+
+Unifies two terms while checking that no variable is unified with a term containing itself. This prevents creating cyclic structures that can cause infinite loops.
+
+```prolog
+% Normal unification succeeds
+?- unify_with_occurs_check(X, a).
+X = a
+
+% Structures unify normally
+?- unify_with_occurs_check(f(X, Y), f(1, 2)).
+X = 1, Y = 2
+
+% Cyclic unification fails (X = f(X) would create infinite structure)
+?- unify_with_occurs_check(X, f(X)).
+false.
+
+% Deep cyclic structure also fails
+?- unify_with_occurs_check(X, f(g(h(X)))).
+false.
+
+% Comparison with regular unification (= allows cycles)
+?- X = f(X).
+X = f(X)  % Creates cyclic structure
+
+?- unify_with_occurs_check(X, f(X)).
+false.    % Prevents cyclic structure
+```
+
+**`acyclic_term/1`** - Check if a term is acyclic
+
+Succeeds if the given term contains no cycles (is acyclic). This is useful for verifying that a term doesn't contain circular references.
+
+```prolog
+% Simple terms are acyclic
+?- acyclic_term(foo).
+true.
+
+?- acyclic_term(42).
+true.
+
+% Structures are acyclic
+?- acyclic_term(f(a, b, c)).
+true.
+
+% Unbound variables are acyclic
+?- acyclic_term(X).
+true.
+
+% Terms bound normally are acyclic
+?- X = f(a, Y), Y = b, acyclic_term(X).
+true.
+
+% Cyclic terms created with = fail acyclic_term check
+?- X = f(X), acyclic_term(X).
+false.
+
+% Deep cyclic structures are detected
+?- X = f(g(X)), acyclic_term(X).
+false.
+```
+
+**Use Cases:**
+
+```prolog
+% Safe list construction
+safe_cons(H, T, [H|T]) :-
+    acyclic_term([H|T]).
+
+% Verify no cycles before processing
+process_term(T) :-
+    acyclic_term(T),
+    % ... process T safely
+
+% Sound unification in critical code
+safe_unify(X, Y) :-
+    unify_with_occurs_check(X, Y).
+```
+
+**Note:** Regular unification with `=` does NOT perform occurs check for performance reasons, following standard Prolog implementations. Use `unify_with_occurs_check/2` when you need guaranteed acyclic terms.
 
 ### Control Predicates
 
@@ -578,6 +724,48 @@ choice(c).
 % Commits to first solution (a), no backtracking to b or c
 ?- (choice(X) -> X = a ; fail).
 X = a
+```
+
+#### Soft Cut
+
+**`(Cond *-> Then)`** - Soft cut (if-then with backtracking in Then)
+
+**`(Cond *-> Then ; Else)`** - Soft cut with else branch
+
+The soft cut operator (`*->`) is like if-then (`->`) but allows backtracking within the `Then` branch:
+
+```prolog
+choice(1).
+choice(2).
+result(a).
+result(b).
+
+% Hard cut: commits to first solution completely (one result)
+?- (choice(X) -> result(Y)).
+X = 1, Y = a
+
+% Soft cut: commits to first X, but allows backtracking in result(Y)
+?- (choice(X) *-> result(Y)).
+X = 1, Y = a;
+X = 1, Y = b;
+false.
+```
+
+**Behavior:**
+- Commits to the first solution of `Cond` (no backtracking in condition)
+- Allows backtracking within `Then` branch (unlike hard cut)
+- With else branch: executes `Else` if `Cond` fails
+
+```prolog
+% Soft cut with else
+?- (choice(1) *-> result(Y) ; Y = z).
+Y = a;
+Y = b;
+false.
+
+% Condition fails, executes else
+?- (choice(99) *-> result(Y) ; Y = z).
+Y = z
 ```
 
 ### Definite Clause Grammars (DCG)
@@ -741,6 +929,84 @@ false.
 
 #### Meta Predicates
 
+**Solution Collection Predicates**
+
+```prolog
+findall(Template, Goal, List)  % Collect all solutions (always succeeds)
+bagof(Template, Goal, List)    % Collect solutions (fails if none found)
+setof(Template, Goal, List)    % Collect sorted unique solutions
+```
+
+**`findall/3`** - Collect all solutions of Goal instantiated with Template
+
+```prolog
+% Define some facts
+person(alice).
+person(bob).
+person(charlie).
+
+% Collect all persons
+?- findall(X, person(X), List).
+List = [alice, bob, charlie]
+
+% Collect with no results (returns empty list)
+?- findall(X, person(nobody), List).
+List = []
+
+% Collect with complex template
+age(alice, 30).
+age(bob, 25).
+
+?- findall(pair(P, A), age(P, A), List).
+List = [pair(alice, 30), pair(bob, 25)]
+```
+
+**`bagof/3`** - Like findall but fails if no solutions
+
+```prolog
+likes(alice, pizza).
+likes(alice, pasta).
+
+% Collect solutions
+?- bagof(F, likes(alice, F), List).
+List = [pizza, pasta]
+
+% Fails if no solutions
+?- bagof(X, likes(nobody, X), List).
+false.
+```
+
+**`setof/3`** - Like bagof but returns sorted unique solutions
+
+```prolog
+item(3).
+item(1).
+item(2).
+item(1).  % duplicate
+
+% Collect sorted unique values
+?- setof(X, item(X), List).
+List = [1, 2, 3]
+
+% With atoms (alphabetically sorted)
+color(red).
+color(blue).
+color(green).
+
+?- setof(C, color(C), List).
+List = [blue, green, red]
+```
+
+**Comparison of Collection Predicates**
+
+| Predicate | Duplicates | Sorted | Fails on empty | Use case |
+|-----------|------------|--------|----------------|----------|
+| `findall/3` | Kept | No | No (returns `[]`) | Collect all solutions |
+| `bagof/3` | Kept | No | Yes | Collect with failure semantics |
+| `setof/3` | Removed | Yes | Yes | Collect unique sorted solutions |
+
+**Other Meta Predicates**
+
 ```prolog
 distinct(Template, Goal)  % Find unique solutions
 
@@ -786,6 +1052,100 @@ X = 3.5
 Y = 3.5
 ```
 
+#### Term Creation and Decomposition Predicates
+
+Ziglog provides ISO Prolog predicates for examining and constructing terms.
+
+**functor/3** - Extract or construct functor and arity
+
+```prolog
+functor(Term, Functor, Arity)
+
+% Extract functor and arity from a term
+?- functor(foo(a, b, c), F, A).
+F = foo, A = 3
+
+% Construct term from functor and arity
+?- functor(T, bar, 2).
+T = bar(_G1, _G2)
+
+% Works with atoms (arity 0)
+?- functor(hello, F, A).
+F = hello, A = 0
+```
+
+**arg/3** - Extract argument from compound term
+
+```prolog
+arg(N, Term, Arg)
+
+% Get the second argument
+?- arg(2, foo(a, b, c), X).
+X = b
+
+% Unify with argument
+?- arg(1, point(10, 20), 10).
+true.
+```
+
+**=../2 (univ)** - Convert between term and list
+
+```prolog
+Term =.. List
+
+% Decompose term into list
+?- foo(a, b) =.. L.
+L = [foo, a, b]
+
+% Construct term from list
+?- T =.. [bar, 1, 2].
+T = bar(1, 2)
+
+% Atoms become singleton lists
+?- hello =.. L.
+L = [hello]
+```
+
+**copy_term/2** - Copy term with fresh variables
+
+```prolog
+copy_term(Term, Copy)
+
+% Copy with renamed variables
+?- copy_term(f(X, Y), Copy).
+Copy = f(_G1, _G2)
+
+% Original and copy are independent
+?- copy_term(f(X, X), f(A, B)), X = 1.
+X = 1, A = _G1, B = _G1
+```
+
+**term_variables/2** - Extract all variables from term
+
+```prolog
+term_variables(Term, List)
+
+% Get all unique variables
+?- term_variables(f(X, Y, Z), Vars).
+Vars = [X, Y, Z]
+
+% Duplicate variables appear once
+?- term_variables(f(X, X, Y), Vars).
+Vars = [X, Y]
+
+% No variables in ground terms
+?- term_variables(foo(a, b), Vars).
+Vars = []
+
+% Works with nested structures
+?- term_variables(f(g(X), h(Y, Z)), Vars).
+Vars = [X, Y, Z]
+
+% Variables share with original term
+?- term_variables(f(X, Y), [H|_]), X = bound, H = bound.
+X = bound, H = bound
+```
+
 #### DCG Predicates
 
 ```prolog
@@ -797,6 +1157,156 @@ s --> [hello], [world].
 ?- phrase(s, [hello, world]).
 true.
 ```
+
+#### Dynamic Database Predicates
+
+Ziglog supports dynamic modification of the clause database at runtime, allowing predicates to be added and removed during execution.
+
+**assert/1, assertz/1** - Add clause to end of database
+
+```prolog
+assert(Clause)    % Add clause at end (synonym for assertz)
+assertz(Clause)   % Add clause at end
+
+% Examples:
+?- assert(person(alice)).
+true.
+
+?- assertz(color(red)).
+true.
+
+% Query asserted facts
+?- person(X).
+X = alice
+
+% Assert rules (use :- operator)
+?- assert((parent(X, Y) :- mother(X, Y))).
+true.
+```
+
+**asserta/1** - Add clause to beginning of database
+
+```prolog
+asserta(Clause)   % Add clause at beginning
+
+% Example:
+?- assertz(num(1)), assertz(num(2)), asserta(num(0)).
+true.
+
+?- num(X).
+X = 0    % asserta puts it first
+X = 1
+X = 2
+```
+
+**retract/1** - Remove first matching clause
+
+```prolog
+retract(Clause)   % Remove and unify with first matching clause
+
+% Examples:
+?- assert(person(alice)), assert(person(bob)).
+true.
+
+?- retract(person(X)).
+X = alice    % Removes first match and binds X
+
+?- person(Y).
+Y = bob      % alice was removed
+
+% Retract can backtrack to remove multiple clauses
+?- assert(temp(1)), assert(temp(2)), assert(temp(3)).
+true.
+
+?- retract(temp(X)).
+X = 1        % First solution
+X = 2        % Backtrack for more
+X = 3
+```
+
+**retractall/1** - Remove all matching clauses
+
+```prolog
+retractall(Pattern)   % Remove all clauses matching pattern
+
+% Examples:
+?- assert(color(red)), assert(color(green)), assert(color(blue)).
+true.
+
+?- retractall(color(_)).
+true.
+
+?- color(X).
+false.       % All removed
+
+% Partial matching
+?- assert(point(1, 2)), assert(point(1, 3)), assert(point(2, 4)).
+true.
+
+?- retractall(point(1, _)).
+true.
+
+?- point(X, Y).
+X = 2, Y = 4   % Only point(2,4) remains
+```
+
+**abolish/1** - Remove all clauses for a predicate
+
+```prolog
+abolish(Functor/Arity)   % Remove all clauses of predicate
+
+% Examples:
+?- assert(person(alice)), assert(person(bob)).
+true.
+
+?- assert(age(alice, 30)).
+true.
+
+?- abolish(person/1).
+true.
+
+?- person(X).
+false.       % All person/1 clauses removed
+
+?- age(X, Y).
+X = alice, Y = 30   % age/2 unaffected
+```
+
+**clause/2** - Retrieve clauses from database
+
+```prolog
+clause(Head, Body)   % Unify with clauses in database
+
+% Examples:
+?- assert(parent(john, mary)).
+true.
+
+?- clause(parent(john, mary), Body).
+Body = true    % Facts have body 'true'
+
+% Retrieve clauses with variables
+?- assert(parent(jane, bob)).
+true.
+
+?- clause(parent(X, Y), true).
+X = john, Y = mary
+X = jane, Y = bob
+
+% Works with rules too
+?- assert((grandparent(X, Y) :- parent(X, Z), parent(Z, Y))).
+true.
+
+?- clause(grandparent(A, B), Body).
+Body = (parent(A, _), parent(_, B))
+```
+
+**Important Notes:**
+
+- Asserted clauses persist only during the current session
+- The database is modified immediately when assert/retract predicates succeed
+- Indexing is automatically rebuilt after database modifications
+- All clauses (static and dynamic) are stored in the same database
+- Be careful with retract/1 in backtracking contexts - it removes clauses permanently
 
 ### Comments
 
@@ -904,7 +1414,7 @@ person(charlie).
 
 ## REPL Commands
 
-The Ziglog REPL provides full-featured editing powered by replxx:
+The Ziglog REPL provides full-featured editing powered by isocline:
 
 ### Editing Features
 
@@ -979,8 +1489,8 @@ For detailed architecture documentation, see `CLAUDE.md`.
 
 Ziglog has comprehensive test coverage:
 
-- **59 unit tests**: Lexer, parser, AST, engine, indexing, arithmetic, floats, non-decimal numbers
-- **238 integration tests**: End-to-end functionality across 13 test files
+- **84 unit tests**: Lexer, parser, AST, engine, indexing, arithmetic, floats, math functions, non-decimal numbers, dynamic predicates, collection predicates, occurs check, term_variables
+- **512 integration tests**: End-to-end functionality across 22 test files
 
 ### Unit Tests
 
@@ -1021,13 +1531,20 @@ parent(john, mary).
 - `tests/integration/block_comments.pl` - Block comment handling (7 tests)
 - `tests/integration/choice_point_elimination.pl` - Optimization (6 tests)
 - `tests/integration/tail_call_optimization.pl` - TCO (6 tests)
-- `tests/integration/arithmetic.pl` - Arithmetic operators (36 tests)
+- `tests/integration/arithmetic.pl` - Arithmetic operators (50 tests)
 - `tests/integration/floats.pl` - Floating-point arithmetic (49 tests)
 - `tests/integration/format.pl` - Format predicates (19 tests)
 - `tests/integration/unicode_escapes.pl` - Unicode and escape sequences (19 tests)
 - `tests/integration/nondecimal.pl` - Non-decimal number syntax (42 tests)
 - `tests/integration/digit_grouping.pl` - Digit grouping syntax (16 tests)
 - `tests/integration/infinity_nan.pl` - Infinity and NaN floats (26 tests)
+- `tests/integration/control.pl` - Control predicates (31 tests)
+- `tests/integration/dynamic.pl` - Dynamic database predicates (32 tests)
+- `tests/integration/collection.pl` - Collection predicates (30 tests)
+- `tests/integration/occurs_check.pl` - Occurs check and sound unification (30 tests)
+- `tests/integration/math.pl` - Advanced math functions (57 tests)
+- `tests/integration/term_variables.pl` - Term variable extraction (30 tests)
+- `tests/integration/soft_cut.pl` - Soft cut operator (8 tests)
 
 ## Examples
 
@@ -1203,10 +1720,10 @@ Current limitations (may be addressed in future versions):
 - **No occurs check**: Unification doesn't prevent infinite structures
 - **No constraint solving**: Pure unification only (no CLP)
 - **Single-threaded**: No parallel query execution
-- **Limited I/O**: Only `write/1` and `nl/0`
+- **Limited I/O**: Only `write/1`, `nl/0`, and `format/1-2`
 - **No module system**: All predicates are global
-- **No assert/retract**: Cannot dynamically modify the database
 - **No debugging**: No trace/spy functionality
+- **No persistent database**: Asserted clauses are session-only (no save/load)
 
 ## Comparison with Other Prologs
 
@@ -1220,7 +1737,7 @@ Current limitations (may be addressed in future versions):
 | Arithmetic | ✅ Int + Float | ✅ Int + Float | ✅ Int + Float |
 | Constraint solving | ❌ | ✅ CLP(FD) | ✅ FD |
 | Module system | ❌ | ✅ | ✅ |
-| Assert/retract | ❌ | ✅ | ✅ |
+| Assert/retract | ✅ | ✅ | ✅ |
 | FFI | ❌ | ✅ | ✅ |
 | JIT compilation | ❌ | ✅ | ✅ |
 

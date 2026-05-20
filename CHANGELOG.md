@@ -2,19 +2,727 @@
 
 ## Recent Improvements
 
-### Replxx Integration - Live Syntax Highlighting (2025-11-20)
+### Readline/Isocline Dependency Update (2026-05-19)
 
-**Migrated from linenoise to replxx for live syntax highlighting in the REPL**
+**Updated the vendored Isocline library from v1.0.4 to v1.1.0**
 
-The Ziglog REPL now provides **live syntax highlighting** as you type, powered by the ClickHouse fork of replxx (a modern C++ readline alternative based on the same foundation as linenoise).
+- **Tab Completion Enhancements**: Upgraded isocline to the latest version which fixes input overlap bugs when completing text inside a word.
+- **Custom Integration Restored**: Re-applied the custom C API extension `ic_completion_input` to allow the Zig REPL wrapper to query input text and cursor positions dynamically.
+- **Header Include Paths**: Normalized the build environment header imports (`isocline.h`) to keep compilation stable.
+
+### Migration to Zig v0.16.0 (2026-05-19)
+
+**Upgraded the codebase to Zig v0.16.0 and modernized system interactions**
+
+Ziglog has been fully ported to Zig v0.16.0, adapting to standard library changes in memory allocation, file systems, process handling, and I/O.
+
+**Key Changes:**
+- **Standard I/O & Terminal Output**: Modernized REPL printing via the cross-platform `std.posix.system.write` API.
+- **File System API Alignment**: Migrated file reading to use the new `std.Io.Dir.cwd().readFileAlloc(...)` helper function.
+- **Process & Arguments**: Adapted command-line entry points to use `std.process.Init` and iterator-based argument parsing.
+- **Interception Buffers**: Updated unit and integration test systems to use the new `std.Io.Writer.Allocating` buffer writer instead of deprecated `std.ArrayListUnmanaged` writer structures.
+- **Stack Optimization**: Adjusted the tail recursion test in `tail_call_optimization.pl` to accommodate the larger stack frame size of Zig v0.16.0 Debug builds.
+- **Code Cleanups**: Removed the redundant `call_dcg/3` predicate and ensured clean builds.
+
+### Soft Cut Operator (2025-11-24)
+
+**Implemented soft cut (`*->`) operator for conditional control flow with backtracking**
+
+Ziglog now supports the soft cut operator (`*->`), providing a middle ground between hard cut (`->`) and full backtracking.
+
+**Functionality:**
+
+The soft cut operator commits to the first solution of the condition but allows backtracking within the then-branch, unlike the hard cut which prevents all backtracking.
+
+**Syntax:**
+- `(Cond *-> Then)` - Soft cut without else
+- `(Cond *-> Then ; Else)` - Soft cut with else branch
+
+**Key Features:**
+- Commits to first solution of condition (no backtracking in `Cond`)
+- Allows backtracking in `Then` branch (unlike hard cut `->`)
+- Executes `Else` if condition fails (with else form)
+- Useful for deterministic condition selection with non-deterministic results
+
+**Examples:**
+
+```prolog
+choice(1).
+choice(2).
+result(a).
+result(b).
+
+% Hard cut: one solution (commits completely)
+?- (choice(X) -> result(Y)).
+X = 1, Y = a
+
+% Soft cut: two solutions (commits to X=1, backtracks in result)
+?- (choice(X) *-> result(Y)).
+X = 1, Y = a;
+X = 1, Y = b;
+false.
+
+% With else branch
+?- (choice(1) *-> result(Y) ; Y = z).
+Y = a;
+Y = b;
+false.
+
+% Condition fails, executes else
+?- (choice(99) *-> result(Y) ; Y = z).
+Y = z
+```
+
+**Implementation:**
+- Lexer: Added `soft_cut` token type for `*->` operator
+- Parser: Integrated `*->` with same precedence as `->` (if-then)
+- Engine: Special handling in solve() for soft cut semantics
+- Syntax highlighting: Cyan color for soft cut operator
+
+**Testing:**
+- 8 integration tests in `tests/integration/soft_cut.pl`
+- Tests cover: basic soft cut, if-then-else forms, failing conditions, compound goals, nested soft cuts
+
+**Total tests: 512 integration tests across 22 test files**
+
+### term_variables/2 Predicate (2025-11-24)
+
+**Implemented ISO Prolog term_variables/2 for extracting variables from terms**
+
+Ziglog now supports the `term_variables/2` predicate, completing the "Term Creation and Decomposition" section of ISO Prolog predicates.
+
+**Functionality:**
+
+`term_variables(+Term, -List)` extracts all unique variables from a term in depth-first, left-to-right order. The variables in the result list share with the original term's variables.
+
+**Key Features:**
+- Collects only unique variables (duplicates appear once)
+- Preserves depth-first, left-to-right traversal order
+- Returns empty list for ground terms (no variables)
+- Variables in result share identity with original term variables
+- Works with nested structures, lists, and complex terms
+
+**Examples:**
+
+```prolog
+% Extract unique variables
+?- term_variables(f(X, Y, Z), Vars).
+Vars = [X, Y, Z]
+
+% Duplicate variables appear once
+?- term_variables(f(X, X, Y), Vars).
+Vars = [X, Y]
+
+% Ground terms have no variables
+?- term_variables(foo(a, b), Vars).
+Vars = []
+
+% Nested structures
+?- term_variables(f(g(X), h(Y, Z)), Vars).
+Vars = [X, Y, Z]
+
+% Variables share with original
+?- term_variables(f(X, Y), [H|_]), X = bound, H = bound.
+X = bound, H = bound
+```
+
+**Technical Details:**
+
+Implementation uses a helper function `collectTermVariables` that:
+- Traverses terms recursively in depth-first order
+- Uses `StringHashMapUnmanaged` to track seen variable names and ensure uniqueness
+- Builds result list preserving encounter order
+- Properly resolves variables through the environment
+
+**Testing:**
+- 5 unit tests covering atoms, single variables, multiple variables, duplicates, and nested structures
+- 30 integration tests in `tests/integration/term_variables.pl`
+- Tests validate order preservation, uniqueness, ground term handling, and variable sharing
+- **SWI-Prolog compatibility verified**: Tested multiple cases including unique variables, duplicates, ground terms, and variable sharing - all behave identically to SWI-Prolog
+
+**ISO Compliance:**
+- Completes "Term Creation and Decomposition" predicates (5/5): `functor/3`, `arg/3`, `=../2`, `copy_term/2`, `term_variables/2`
+- Increases overall ISO compliance to ~50-55%
+
+**Files Modified:**
+- `src/engine.zig`: Added `collectTermVariables` helper and `term_variables/2` predicate handler
+- `tests/integration/term_variables.pl`: New test file with 30 comprehensive tests
+- `src/integration_test_main.zig`: Added term_variables.pl to test suite
+
+**Total Test Count:** 84 unit tests + 504 integration tests (across 21 test files)
+
+---
+
+### Advanced Math Functions (2025-11-24)
+
+**Added comprehensive mathematical functions for scientific computing**
+
+Ziglog now supports a full suite of mathematical functions including rounding, type conversion, square root, exponential, logarithmic, trigonometric, and power operations.
+
+**New Functions:**
+
+**Rounding Functions** (return integer):
+- `floor(X)` - Round down to nearest integer
+- `ceiling(X)` - Round up to nearest integer  
+- `round(X)` - Round to nearest integer (banker's rounding)
+- `truncate(X)` - Remove decimal part (round towards zero)
+
+**Type Conversion**:
+- `float(X)` - Convert integer to float
+
+**Math Functions** (return float):
+- `sqrt(X)` - Square root
+- `exp(X)` - Exponential (e^X)
+- `log(X)` - Natural logarithm
+
+**Trigonometric Functions** (angles in radians, return float):
+- `sin(X)` - Sine
+- `cos(X)` - Cosine
+- `tan(X)` - Tangent
+- `atan(X)` - Arctangent (single argument)
+
+**Binary Operators**:
+- `**(Base, Exp)` or `^(Base, Exp)` - Power/exponentiation (returns float)
+- `atan2(Y, X)` - Two-argument arctangent for computing angles in all quadrants
+
+**Examples:**
+
+```prolog
+% Rounding functions
+?- X is floor(3.7).
+X = 3
+
+?- X is ceiling(3.2).
+X = 4
+
+?- X is round(3.5).
+X = 4
+
+?- X is truncate(-3.7).
+X = -3
+
+% Math functions
+?- X is sqrt(16).
+X = 4.0
+
+?- X is exp(1).
+X = 2.718281828459045
+
+?- X is log(2.718281828459045).
+X = 1.0
+
+% Trigonometry (radians)
+?- X is sin(0).
+X = 0.0
+
+?- X is atan(1).
+X = 0.7853981633974483  % pi/4
+
+% Power operator
+?- X is 2 ** 3.
+X = 8.0
+
+?- X is 9 ** 0.5.
+X = 3.0  % Square root via fractional exponent
+
+% atan2 for angle calculation
+?- X is atan2(1, 1).
+X = 0.7853981633974483  % pi/4 (45 degrees)
+```
+
+**Implementation Details:**
+
+- All functions implemented in `src/arithmetic.zig`
+- Automatic type promotion: integer arguments converted to float where needed
+- Rounding functions always return integers (ISO-compliant)
+- Trigonometric functions use radians (ISO standard)
+- Added 6 new unit tests in `src/arithmetic.zig`
+- Added 57 integration tests in `tests/integration/math.pl`
+- Total test coverage: 84 unit tests + 474 integration tests across 20 test files
+
+**ISO Compliance:**
+
+- ✅ All functions follow ISO Prolog arithmetic evaluation semantics
+- ✅ Compatible with SWI-Prolog and other major Prolog implementations
+- ✅ Proper handling of special float values (infinity, NaN) in all functions
+
+### ISO-Compliant min/max Type Preservation (2025-11-24)
+
+**Fixed `min/2` and `max/2` to preserve the type of the winning value**
+
+Ziglog now correctly implements ISO Prolog semantics for `min/2` and `max/2` functions. These functions now preserve the type (integer or float) of the winning operand, rather than always returning a float.
+
+**Behavior:**
+
+- Compares operands numerically (converting to float for comparison if needed)
+- Returns the winning value in its **original type**
+- If both operands are numerically equal but have different types, returns the float value (ISO behavior)
+
+**Examples:**
+
+```prolog
+% Integer wins → returns integer
+?- X is max(3, 2.5).
+X = 3
+
+?- X is min(2, 5.5).
+X = 2
+
+% Float wins → returns float
+?- X is max(2.5, 2).
+X = 2.5
+
+?- X is min(5.5, 6).
+X = 5.5
+
+% Both integers → returns integer
+?- X is max(5, 3).
+X = 5
+```
+
+**ISO Compliance:**
+
+- ✅ Ziglog is now fully ISO-compliant for `min/2` and `max/2`
+- ✅ Matches SWI-Prolog behavior (which follows ISO standard)
+- ✅ Preserves integer types when appropriate, improving numeric precision
+
+**Technical Details:**
+
+- Fixed in `src/arithmetic.zig:evaluate()` function
+- Added 8 new integration tests in `tests/integration/arithmetic.pl` for type preservation
+- Test coverage: 44 arithmetic tests, all passing
+
+**Impact:**
+
+- Better numeric precision when working with integers
+- Improved ISO Prolog compatibility
+- More predictable type behavior in arithmetic expressions
+
+---
+
+### Occurs Check and Sound Unification (2025-11-22)
+
+**Added ISO Prolog occurs check predicates for sound unification**
+
+Ziglog now supports occurs check functionality, preventing the creation of cyclic (infinite) data structures during unification. This brings Ziglog into compliance with ISO Prolog requirements for sound unification.
+
+**New Predicates:**
+
+- **`unify_with_occurs_check/2`**: Sound unification with occurs check
+  - Syntax: `unify_with_occurs_check(Term1, Term2)`
+  - Unifies two terms while ensuring no variable is bound to a term containing itself
+  - Prevents cyclic structures like `X = f(X)`
+  - Example: `?- unify_with_occurs_check(X, f(X)).` → `false`
+  
+- **`acyclic_term/1`**: Check if a term is acyclic
+  - Syntax: `acyclic_term(Term)`
+  - Succeeds if the term contains no cycles
+  - Useful for verifying data structure integrity
+  - Example: `?- X = f(X), acyclic_term(X).` → `false`
+
+**Usage Examples:**
+
+```prolog
+% Normal unification succeeds
+?- unify_with_occurs_check(X, a).
+X = a
+
+% Structure unification works normally
+?- unify_with_occurs_check(f(X, Y), f(1, 2)).
+X = 1, Y = 2
+
+% Cyclic unification fails
+?- unify_with_occurs_check(X, f(X)).
+false.
+
+% Deep cyclic structures also fail
+?- unify_with_occurs_check(X, f(g(h(X)))).
+false.
+
+% Comparison with regular unification
+?- X = f(X).
+X = f(X)  % Creates cyclic structure
+
+?- unify_with_occurs_check(X, f(X)).
+false.    % Prevents cycle
+
+% Check if term is acyclic
+?- acyclic_term(f(a, b, c)).
+true.
+
+?- X = f(a, Y), Y = b, acyclic_term(X).
+true.
+
+?- X = f(X), acyclic_term(X).
+false.
+```
+
+**Implementation Details:**
+
+- **Engine Changes** (`src/engine.zig`):
+  - Added `occursIn()`: Checks if a variable occurs anywhere in a term
+  - Added `unifyWithOccursCheck()`: Unification with occurs check enforcement
+  - Added `isAcyclicTerm()`: Cycle detection using visited set tracking
+  - `unify_with_occurs_check/2` implemented at line ~941 (in args.len == 2 block)
+  - `acyclic_term/1` implemented at line ~911 (separate block for args.len == 1)
+
+- **Occurs Check Algorithm**:
+  - Before binding a variable X to term T, check if X occurs in T
+  - Uses recursive traversal of term structure
+  - Returns false if variable found within its own binding term
+  - O(n) complexity where n = size of term
+
+- **Acyclicity Check**:
+  - Uses `StringHashMapUnmanaged(void)` as visited set
+  - Tracks variables seen during term traversal
+  - Detects cycles when variable encountered twice in same path
+  - Handles complex nested structures correctly
+
+**ISO Prolog Compliance:**
+
+- ✅ `unify_with_occurs_check/2` is part of ISO Prolog standard (ISO/IEC 13211-1:1995)
+- ✅ Implements sound unification semantics
+- ✅ Prevents creation of cyclic data structures
+- ✅ `acyclic_term/1` follows ISO Prolog specification
+- ⚠️ Regular unification (`=/2`) does NOT use occurs check (standard behavior for performance)
+
+**Testing:**
+
+- **2 new unit tests** in `src/engine.zig`:
+  - `test "Engine - unify_with_occurs_check"`: Tests normal and cyclic unification cases
+  - `test "Engine - acyclic_term"`: Tests acyclicity detection for various term types
+  
+- **30 integration tests** in `tests/integration/occurs_check.pl`:
+  - Normal unification with occurs check (10 tests)
+  - Cyclic structure prevention (5 tests)
+  - Acyclic term detection (10 tests)
+  - Combined predicate usage (5 tests)
+  - Edge cases and complex structures
+
+**Use Cases:**
+
+```prolog
+% Safe data structure construction
+safe_cons(H, T, [H|T]) :-
+    unify_with_occurs_check(Result, [H|T]),
+    acyclic_term(Result).
+
+% Validate data before processing
+process_term(T) :-
+    acyclic_term(T),
+    % ... safe to process T
+
+% Sound unification in critical algorithms
+safe_unify(X, Y) :-
+    unify_with_occurs_check(X, Y).
+
+% Detect problematic structures
+has_cycle(Term) :-
+    \+ acyclic_term(Term).
+```
+
+**Performance:**
+
+- Occurs check adds O(n) overhead to unification
+- Regular `=/2` does NOT use occurs check (maintains performance)
+- Use `unify_with_occurs_check/2` only when soundness is required
+- `acyclic_term/1` uses hash map for efficient cycle detection
+
+**Limitations:**
+
+- Only prevents NEW cycles during unification
+- Does not detect cycles already present in arguments (cycle-safe implementation)
+- No support for global occurs check flag (would require engine-wide changes)
+
+**Test Summary:**
+- Total unit tests: 78 (was 76)
+- Total integration tests: 403 (was 373)
+- New test file: `tests/integration/occurs_check.pl`
+
+### Collection Predicates (2025-11-22)
+
+**Added ISO Prolog collection predicates for solution aggregation**
+
+Ziglog now supports the three standard ISO Prolog collection predicates (`findall/3`, `bagof/3`, `setof/3`), enabling powerful solution aggregation and meta-programming capabilities.
+
+**New Predicates:**
+
+- **`findall/3`**: Collect all solutions (always succeeds)
+  - Syntax: `findall(Template, Goal, List)`
+  - Collects all solutions of Goal, instantiating Template for each
+  - Returns empty list `[]` if no solutions found
+  - Example: `?- findall(X, member(X, [1,2,3]), L).` → `L = [1, 2, 3]`
+  
+- **`bagof/3`**: Collect solutions (fails if none)
+  - Syntax: `bagof(Template, Goal, List)`
+  - Like findall but fails if no solutions found
+  - Returns solutions in order found (may contain duplicates)
+  - Example: `?- bagof(X, member(X, [1,2,1]), L).` → `L = [1, 2, 1]`
+  
+- **`setof/3`**: Collect unique sorted solutions (fails if none)
+  - Syntax: `setof(Template, Goal, List)`
+  - Like bagof but returns sorted unique solutions
+  - Uses ISO Prolog standard term ordering
+  - Example: `?- setof(X, member(X, [3,1,2,1]), L).` → `L = [1, 2, 3]`
+
+**Usage Examples:**
+
+```prolog
+% Collect all matching values
+?- findall(X, member(X, [a, b, c]), L).
+L = [a, b, c]
+
+% Collect with complex templates
+?- findall(person(Name, Age), person(Name, Age), L).
+L = [person(alice, 30), person(bob, 25)]
+
+% Empty result handling
+?- findall(X, member(X, []), L).
+L = []  % findall succeeds with empty list
+
+?- bagof(X, member(X, []), L).
+false.  % bagof fails
+
+% Sorting and deduplication
+?- setof(X, member(X, [3, 1, 2, 1, 3]), L).
+L = [1, 2, 3]
+
+% Using in rules
+count_solutions(Goal, Count) :-
+    findall(_, Goal, Solutions),
+    length(Solutions, Count).
+
+unique_values(Goal, Values) :-
+    setof(X, Goal, Values).
+```
+
+**Implementation Details:**
+
+- **Engine Changes** (`src/engine.zig`):
+  - Added `termsToList()`: Converts term arrays to Prolog list structures
+  - Added `sortTerms()`: Bubble sort implementation for setof ordering
+  - Added `compareTerms()`: ISO Prolog standard term ordering comparison
+  - Added context structs: `FindallContext`, `BagofContext`, `SetofContext`
+  - Integrated all three predicates into `solve()` function (lines ~517-721)
+  
+- **Solution Collection**:
+  - Uses `SolutionHandler` callback pattern for collecting solutions
+  - Each predicate creates a context struct to accumulate results
+  - Template is instantiated for each solution
+  - Results collected in ArrayList for efficient appending
+
+- **Term Ordering** (ISO Prolog Standard):
+  - Variables < Numbers < Atoms < Strings < Structures
+  - Numbers ordered by value (integers and floats compared numerically)
+  - Atoms ordered lexicographically
+  - Structures ordered by: arity, then functor, then arguments recursively
+
+- **Deduplication** (setof only):
+  - Uses `std.StringHashMap` to track seen terms
+  - Terms converted to strings for uniqueness checking
+  - Maintains insertion order, then sorts final result
+
+**Testing:**
+
+- **4 new unit tests** in `src/engine.zig`:
+  - `test "Engine - findall"`: Basic collection functionality
+  - `test "Engine - findall empty"`: Empty result handling
+  - `test "Engine - bagof"`: Bagof semantics (fails on empty)
+  - `test "Engine - setof"`: Sorting and deduplication
+  
+- **30 integration tests** in `tests/integration/collection.pl`:
+  - Basic collection with member/2
+  - Complex template collection (structures, pairs)
+  - Empty list handling (findall succeeds, bagof/setof fail)
+  - Sorting behavior (numeric and lexicographic)
+  - Deduplication (setof removes duplicates)
+  - Variable template patterns
+  - Integration with other predicates
+  - Performance with larger datasets
+
+**Semantic Differences:**
+
+| Predicate | Empty Result | Duplicates | Ordering |
+|-----------|--------------|------------|----------|
+| `findall/3` | Returns `[]` (succeeds) | Preserved | As found |
+| `bagof/3` | Fails | Preserved | As found |
+| `setof/3` | Fails | Removed | Sorted (ISO standard) |
+
+**ISO Prolog Compliance:**
+
+- ✅ Standard term ordering implemented
+- ✅ Correct empty result semantics
+- ✅ Template instantiation works correctly
+- ✅ All three predicates follow ISO specification
+
+**Use Cases:**
+
+```prolog
+% Find all children of a parent
+children_of(Parent, Children) :-
+    findall(Child, parent(Parent, Child), Children).
+
+% Count distinct values
+count_distinct(Goal, Count) :-
+    setof(X, Goal, Values),
+    length(Values, Count).
+
+% Collect structured data
+all_employees(Employees) :-
+    findall(emp(Name, Dept, Salary), 
+            employee(Name, Dept, Salary),
+            Employees).
+
+% Aggregation patterns
+sum_salaries(Total) :-
+    findall(S, employee(_, _, S), Salaries),
+    sum_list(Salaries, Total).
+```
+
+**Limitations:**
+
+- No free variable quantification (e.g., `bagof(X, Y^pred(X,Y), L)` syntax not supported)
+- Sorting uses bubble sort (O(n²)) - acceptable for typical use cases
+- All solutions collected in memory (no streaming)
+- Template instantiation creates new terms (uses arena allocator)
+
+**Performance:**
+
+- Collection: O(n) where n = number of solutions
+- Deduplication (setof): O(n) hash map operations
+- Sorting (setof): O(n²) bubble sort
+- Memory: All solutions held in memory during collection
+
+**Test Summary:**
+- Total unit tests: 76 (was 72)
+- Total integration tests: 373 (was 343)
+- New test file: `tests/integration/collection.pl`
+
+### Dynamic Database Predicates (2025-11-22)
+
+**Added full support for ISO Prolog dynamic database modification predicates**
+
+Ziglog now supports runtime modification of the clause database, allowing predicates to be added, removed, and inspected during execution. This is a major feature addition that brings Ziglog closer to ISO Prolog compliance.
+
+**New Predicates:**
+
+- **`assert/1`, `assertz/1`**: Add clause to end of database
+  - Example: `?- assert(person(alice)).`
+  - Supports both facts and rules
+  - Synonym predicates (assert = assertz)
+  
+- **`asserta/1`**: Add clause to beginning of database
+  - Example: `?- asserta(priority(high)).`
+  - Affects clause ordering for resolution
+  
+- **`retract/1`**: Remove first matching clause
+  - Example: `?- retract(person(X)).` binds X and removes clause
+  - Backtracks to remove multiple clauses
+  - Pattern matching with unification
+  
+- **`retractall/1`**: Remove all matching clauses
+  - Example: `?- retractall(color(_)).`
+  - Removes all matching patterns in one call
+  - Always succeeds (even if no matches)
+  
+- **`abolish/1`**: Remove all clauses for a predicate
+  - Example: `?- abolish(person/1).`
+  - Uses functor/arity notation
+  - Clears entire predicate definition
+  
+- **`clause/2`**: Retrieve clauses from database
+  - Example: `?- clause(parent(X, Y), Body).`
+  - Returns `Body = true` for facts
+  - Returns conjunction for rules
+  - Useful for metaprogramming
+
+**Implementation Details:**
+
+- **Engine Changes** (`src/engine.zig`):
+  - Added `assertClause()`: Parses and adds clauses to database
+  - Added `termToGoals()`: Converts conjunction terms to goal arrays
+  - Added `rebuildIndex()`: Rebuilds first-argument index after modifications
+  - Added `ruleToTerm()`: Converts internal rules back to term representation
+  - Added `goalsToTerm()` and `bodyToTerm()`: Constructs conjunction terms
+  - All predicates integrated into `solve()` function
+  
+- **Indexing**: Automatically rebuilt after assert/retract operations
+  - Maintains O(1) first-argument indexing performance
+  - No degradation in query performance
+  
+- **Backtracking**: 
+  - `retract/1` provides choice points for multiple matches
+  - Database modifications are immediate and persistent within session
+  - No transaction support (modifications cannot be rolled back)
+
+**Testing:**
+
+- **5 new unit tests** in `src/engine.zig`:
+  - `test "Engine - assert and retract"`
+  - `test "Engine - asserta vs assertz"`
+  - `test "Engine - retractall"`
+  - `test "Engine - abolish"`
+  - `test "Engine - clause"`
+  
+- **32 integration tests** in `tests/integration/dynamic.pl`:
+  - Basic assert/retract operations
+  - Clause ordering (asserta vs assertz)
+  - Pattern matching with variables
+  - Predicate abolishment
+  - Clause retrieval
+  - Cleanup and verification
+
+**Usage Examples:**
+
+```prolog
+% Dynamic fact assertion
+?- assert(person(alice)), person(X).
+X = alice
+
+% Clause ordering
+?- assertz(num(1)), assertz(num(2)), asserta(num(0)), num(X).
+X = 0
+X = 1
+X = 2
+
+% Pattern-based retraction
+?- assert(color(red)), assert(color(green)), retractall(color(_)), color(X).
+false.
+
+% Predicate removal
+?- assert(person(alice)), abolish(person/1), person(X).
+false.
+
+% Clause inspection
+?- assert(parent(john, mary)), clause(parent(X, Y), Body).
+X = john, Y = mary, Body = true
+```
+
+**Limitations:**
+
+- Asserted clauses are session-only (not persisted to disk)
+- No support for asserting DCG rules (use standard rules instead)
+- Rules must use `:-` operator syntax in assert calls
+- No module-aware dynamic predicates (all predicates global)
+
+**Test Summary:**
+- Total unit tests: 72 (was 67)
+- Total integration tests: 343 (was 311)
+- New test file: `tests/integration/dynamic.pl`
+
+### Isocline Integration - Live Syntax Highlighting (2025-11-20)
+
+**Migrated from linenoise to isocline for live syntax highlighting in the REPL**
+
+The Ziglog REPL now provides **live syntax highlighting** as you type, powered by isocline (a modern pure C readline alternative).
 
 **New Features:**
 
 - **Live Syntax Highlighting**: Real-time colorization as you type
-  - Keywords (`:−`, `-->`, `->`, `;`, `\+`) in red
-  - Atoms in cyan, variables in yellow
-  - Numbers in magenta, strings in green
-  - Built-in predicates (`write`, `nl`, etc.) highlighted
+  - Keywords (`:−`, `-->`, `->`, `;`, `\+`) in cyan/red
+  - Atoms in yellow, variables in lime (bright green)
+  - Numbers in magenta, strings in gold
+  - Operators and punctuation highlighted
 - **Improved Multi-line Editing**: Better indentation support
 - All previous features retained: tab completion, syntax hints, history search
 
@@ -22,22 +730,21 @@ The Ziglog REPL now provides **live syntax highlighting** as you type, powered b
 
 ```prolog
 > parent(john, mary).    % Colors appear as you type
-      └─cyan─┘           % Atoms
-  └────builtin/cyan───┘  % Built-in predicates (if defined)
+      └─yellow─┘         % Atoms
+  └────yellow───┘        % Atoms
 
 > ?- parent(X, Y).       % Live highlighting
-     └─yellow─┘          % Variables
+     └─lime──┘           % Variables
 ```
 
 **Technical Details:**
 
-- **Replxx Library**: Integrated ClickHouse fork of replxx (18 C++ source files, BSD-licensed)
-- **Replxx Wrapper** (`src/replxx.zig`): Zig wrapper providing idiomatic interface
-- **Replxx Helper** (`src/replxx/replxx_helper.cxx`): C++ glue code for instantiation
+- **Isocline Library**: Integrated pure C readline library (BSD-licensed)
+- **Isocline Wrapper** (`src/isocline_wrapper.zig`): Zig wrapper providing idiomatic interface
 - **Enhanced Highlighter** (`src/highlighter.zig`):
-  - New `highlightForReplxx()`: Fills color buffer for live highlighting during input
-  - Existing `highlight()`: ANSI codes for terminal output
-- **Build System**: Updated to compile C++11 code with exceptions enabled
+  - `highlightForIsocline()`: Fills color buffer for live highlighting during input
+  - Uses HTML color names supported by isocline
+- **Build System**: Clean C integration, simpler than previous C++ solution
 - **Backward Compatibility**: History file format changed - old `.ziglog_history` files should be removed
 
 ### Linenoise Integration - Enhanced REPL Experience (2025-11-20)

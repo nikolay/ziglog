@@ -72,8 +72,8 @@
 % EXPECT: X = 5.0
 ?- X is max(2.5, 5.0).
 
-% Mixed min/max
-% EXPECT: X = 2.0
+% Mixed min/max (ISO: preserves type of winner)
+% EXPECT: X = 2
 ?- X is min(2, 5.5).
 
 % EXPECT: X = 5.5

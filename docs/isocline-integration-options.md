@@ -9,7 +9,7 @@ Ziglog has **internalized** the isocline library (v1.0.4) from https://github.co
 - Built as a single compilation unit (`isocline.c` includes all other files)
 - Modified files: `common.h`, `completers.c`, `completions.c`, `env.h`, `history.c`, `isocline.c`, `undo.c`
 
-**Note**: Documentation still incorrectly mentions "replxx" - this should be updated to "isocline".
+**Note**: All documentation has been updated to use "isocline" instead of the older "replxx" references.
 
 ---
 
@@ -206,7 +206,7 @@ done
 2. Make it executable: `chmod +x scripts/update-isocline.sh`
 3. Document in README.md under "Updating Dependencies"
 4. Add to `.gitignore`: `src/isocline.backup.*`
-5. **Fix documentation**: Replace all "replxx" references with "isocline"
+5. **Documentation**: All "replxx" references have been replaced with "isocline"
 
 ### When to Run Updates
 
@@ -236,7 +236,7 @@ If implementing update script (Option 2):
 - [ ] Test script in dry-run
 - [ ] Document usage in README.md
 - [ ] Add backup dirs to `.gitignore`
-- [ ] **Fix replxx → isocline in all documentation**
+- [x] **Fix replxx → isocline in all documentation**
 
 ---
 

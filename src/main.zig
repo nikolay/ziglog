@@ -4,6 +4,9 @@ const Parser = @import("parser.zig").Parser;
 const engine = @import("engine.zig");
 const isocline = @import("isocline_wrapper.zig");
 const highlighter = @import("highlighter.zig");
+const build_options = @import("build_options");
+
+const version = build_options.version;
 
 fn rawPrint(text: []const u8) !void {
     const builtin = @import("builtin");
@@ -12,7 +15,8 @@ fn rawPrint(text: []const u8) !void {
         const handle = windows.GetStdHandle(windows.STD_OUTPUT_HANDLE) catch return error.StdoutUnavailable;
         _ = try windows.WriteFile(handle, text, null);
     } else {
-        _ = try std.posix.write(std.posix.STDOUT_FILENO, text);
+        const rc = std.posix.system.write(std.posix.STDOUT_FILENO, text.ptr, text.len);
+        if (rc < 0) return error.WriteFailed;
     }
 }
 
@@ -90,14 +94,8 @@ fn ziglogHighlighter(henv: ?*isocline.HighlightEnv, input: [*c]const u8, _: ?*an
     highlighter.highlightForIsocline(henv, input);
 }
 
-fn loadFile(alloc: std.mem.Allocator, engine_instance: *engine.Engine, filename: []const u8) !void {
-    const filename_z = try alloc.dupeZ(u8, filename);
-    defer alloc.free(filename_z);
-
-    const file = try std.fs.cwd().openFile(filename_z, .{});
-    defer file.close();
-
-    const content = try file.readToEndAlloc(alloc, 1024 * 1024); // 1MB max
+fn loadFile(alloc: std.mem.Allocator, io: std.Io, engine_instance: *engine.Engine, filename: []const u8) !void {
+    const content = try std.Io.Dir.cwd().readFileAlloc(io, filename, alloc, .limited(1024 * 1024)); // 1MB max
     defer alloc.free(content);
 
     var parser = Parser.init(alloc, content);
@@ -112,17 +110,42 @@ fn loadFile(alloc: std.mem.Allocator, engine_instance: *engine.Engine, filename:
         try engine_instance.addRule(rule);
         try rawPrint("Loaded: ");
         var buf: [256]u8 = undefined;
-        var fixed_buf_stream = std.io.fixedBufferStream(&buf);
-        try rule.head.format("", .{}, fixed_buf_stream.writer());
-        try rawPrint(fixed_buf_stream.getWritten());
+        var fixed_writer = std.Io.Writer.fixed(&buf);
+        try rule.head.format("", .{}, &fixed_writer);
+        try rawPrint(buf[0..fixed_writer.end]);
         try rawPrint(".\n");
     }
 }
 
-pub fn main() !void {
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
+pub fn main(init: std.process.Init) !void {
+    const alloc = init.arena.allocator();
+
+    // Parse command-line arguments
+    var args = init.minimal.args.iterate();
+    _ = args.skip(); // Skip program name
+
+    while (args.next()) |arg| {
+        if (std.mem.eql(u8, arg, "--swi-compat")) {
+            ast.swi_compat_mode = true;
+        } else if (std.mem.eql(u8, arg, "--version") or std.mem.eql(u8, arg, "-V")) {
+            try rawPrint(version);
+            try rawPrint("\n");
+            return;
+        } else if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
+            try rawPrint("Ziglog - A Prolog interpreter written in Zig\n\n");
+            try rawPrint("Usage: ziglog [OPTIONS]\n\n");
+            try rawPrint("Options:\n");
+            try rawPrint("  --swi-compat    Enable SWI-Prolog compatibility mode (no spaces after commas, no quotes on strings, etc.)\n");
+            try rawPrint("  --version, -V   Show version number\n");
+            try rawPrint("  --help, -h      Show this help message\n");
+            return;
+        } else {
+            try rawPrint("Unknown option: ");
+            try rawPrint(arg);
+            try rawPrint("\nUse --help for usage information.\n");
+            return error.InvalidArgument;
+        }
+    }
 
     var engine_instance = engine.Engine.init(alloc);
     defer engine_instance.deinit();
@@ -142,7 +165,7 @@ pub fn main() !void {
     // Enable syntax highlighting
     isocline.enableHighlight(true);
 
-    try rawPrint("Ziglog REPL (with isocline support)\n");
+    try rawPrint("Ziglog REPL\n");
     try rawPrint("Type a rule/fact. Type ?- query. Type :help for commands.\n\n");
 
     while (true) {
@@ -187,7 +210,7 @@ pub fn main() !void {
                     try rawPrint("Usage: :load <filename>\n");
                     continue;
                 }
-                loadFile(alloc, &engine_instance, filename) catch |err| {
+                loadFile(alloc, init.io, &engine_instance, filename) catch |err| {
                     try rawPrint("Error loading file: ");
                     try rawPrint(@errorName(err));
                     try rawPrint("\n");
@@ -219,7 +242,11 @@ pub fn main() !void {
                     .handle = defaultHandle,
                 };
                 _ = try engine_instance.solve(goals, &env, 0, 0, handler, stdout);
-                if (!has_printed) try rawPrint("  false.\n");
+                if (!has_printed) {
+                    try rawPrint("   false.\n");
+                } else {
+                    try rawPrint(".\n"); // Period on new line after all solutions
+                }
             }
         } else {
             while (parser.lexer.peek().tag != .eof) {
@@ -266,8 +293,9 @@ fn defaultHandle(ctx_ptr: ?*anyopaque, env: engine.EnvMap, _: *engine.Engine) !v
 
     var it = env.iterator();
     var found_vars = false;
-    var output = std.ArrayListUnmanaged(u8){};
-    const out_writer = output.writer(ctx.alloc);
+    var output = std.Io.Writer.Allocating.init(ctx.alloc);
+    defer output.deinit();
+    const out_writer = &output.writer;
 
     while (it.next()) |entry| {
         if (std.mem.indexOf(u8, entry.key_ptr.*, "_") == null) {
@@ -280,11 +308,16 @@ fn defaultHandle(ctx_ptr: ?*anyopaque, env: engine.EnvMap, _: *engine.Engine) !v
     }
 
     if (found_vars) {
-        try ctx.writer.print("  {s}\n", .{output.items});
+        // Print semicolon prefix for subsequent solutions (standard Prolog format)
+        if (ctx.has_printed.*) {
+            try ctx.writer.print("\n;  {s}", .{output.writer.buffer[0..output.writer.end]});
+        } else {
+            try ctx.writer.print("   {s}", .{output.writer.buffer[0..output.writer.end]});
+        }
         ctx.has_printed.* = true;
     } else {
         if (!ctx.has_printed.*) {
-            try ctx.writer.print("  true.\n", .{});
+            try ctx.writer.print("   true", .{});
             ctx.has_printed.* = true;
         }
     }

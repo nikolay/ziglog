@@ -20,6 +20,7 @@ pub const TokenType = enum {
     mul,
     div,
     int_div, // //
+    power, // **
     greater,
     less,
     greater_equal,
@@ -33,6 +34,7 @@ pub const TokenType = enum {
     is,
     arrow, // --> (DCG)
     if_then, // -> (if-then)
+    soft_cut, // *-> (soft cut)
     eof,
 };
 
@@ -46,9 +48,15 @@ pub const Lexer = struct {
     source: []const u8,
     pos: usize,
     alloc: std.mem.Allocator,
+    last_token_type: TokenType,
 
     pub fn init(alloc: std.mem.Allocator, source: []const u8) Lexer {
-        return Lexer{ .source = source, .pos = 0, .alloc = alloc };
+        return Lexer{ .source = source, .pos = 0, .alloc = alloc, .last_token_type = .eof };
+    }
+
+    fn makeToken(self: *Lexer, tag: TokenType, value: []const u8, start: usize) Token {
+        self.last_token_type = tag;
+        return Token{ .tag = tag, .value = value, .start = start };
     }
 
     fn isAlphaNumeric(c: u8) bool {
@@ -421,10 +429,77 @@ pub const Lexer = struct {
                 self.pos += 1;
                 return Token{ .tag = .atom, .value = "-", .start = start };
             }
+            // Check if followed immediately by a digit - if so, it MIGHT be a negative number literal
+            // Only treat it as a negative literal if it doesn't follow a number/rparen/rbracket
+            // This matches ISO Prolog behavior: -5 is a literal, but 10-5 is subtraction
+            const can_be_negative_literal = self.last_token_type != .number and
+                self.last_token_type != .rparen and
+                self.last_token_type != .rbracket;
+            if (can_be_negative_literal and self.pos + 1 < self.source.len and std.ascii.isDigit(self.source[self.pos + 1])) {
+                self.pos += 1; // Move to the digit
+                // Parse the number (same logic as positive numbers below)
+                const first_digit = self.source[self.pos];
+
+                // Check for ISO syntax: 0b, 0o, 0x (after the minus)
+                if (first_digit == '0' and self.pos + 1 < self.source.len) {
+                    const next_char = self.source[self.pos + 1];
+                    if (next_char == 'b' or next_char == 'B') {
+                        self.pos += 2; // skip '0b'
+                        self.skipDigitGroupsForRadix(2);
+                        return self.makeToken(.number, self.source[start..self.pos], start);
+                    } else if (next_char == 'o' or next_char == 'O') {
+                        self.pos += 2; // skip '0o'
+                        self.skipDigitGroupsForRadix(8);
+                        return self.makeToken(.number, self.source[start..self.pos], start);
+                    } else if (next_char == 'x' or next_char == 'X') {
+                        self.pos += 2; // skip '0x'
+                        self.skipDigitGroupsForRadix(16);
+                        return self.makeToken(.number, self.source[start..self.pos], start);
+                    }
+                }
+
+                // Regular decimal number
+                self.skipDigitGroupsForRadix(10);
+
+                // Check for decimal point (float)
+                if (self.pos < self.source.len and self.source[self.pos] == '.') {
+                    if (self.pos + 1 < self.source.len and std.ascii.isDigit(self.source[self.pos + 1])) {
+                        self.pos += 1; // skip '.'
+                        self.skipDigitGroupsForRadix(10);
+
+                        // Check for Inf or NaN suffix
+                        if (self.pos + 3 <= self.source.len) {
+                            const remaining = self.source[self.pos..];
+                            if (remaining.len >= 3 and
+                                (std.mem.eql(u8, remaining[0..3], "Inf") or
+                                    std.mem.eql(u8, remaining[0..3], "NaN")))
+                            {
+                                self.pos += 3;
+                            }
+                        }
+                    }
+                }
+                return self.makeToken(.number, self.source[start..self.pos], start);
+            }
             self.pos += 1;
-            return Token{ .tag = .minus, .value = "-", .start = start };
+            return self.makeToken(.minus, "-", start);
         }
         if (char == '*') {
+            // Check for *-> (soft cut operator)
+            if (self.pos + 2 < self.source.len and self.source[self.pos + 1] == '-' and self.source[self.pos + 2] == '>') {
+                self.pos += 3;
+                return Token{ .tag = .soft_cut, .value = "*->", .start = start };
+            }
+            // Check for ** (power operator)
+            if (self.pos + 1 < self.source.len and self.source[self.pos + 1] == '*') {
+                // Check if **followed by '(' - if so, it's a functor (atom)
+                if (self.pos + 2 < self.source.len and self.source[self.pos + 2] == '(') {
+                    self.pos += 2;
+                    return Token{ .tag = .atom, .value = "**", .start = start };
+                }
+                self.pos += 2;
+                return Token{ .tag = .power, .value = "**", .start = start };
+            }
             // Check if followed by '(' - if so, it's a functor (atom)
             if (self.pos + 1 < self.source.len and self.source[self.pos + 1] == '(') {
                 self.pos += 1;
@@ -506,6 +581,11 @@ pub const Lexer = struct {
                 self.pos += 3;
                 return Token{ .tag = .arith_not_equal, .value = "=\\=", .start = start };
             }
+            if (self.pos + 2 < self.source.len and self.source[self.pos + 1] == '.' and self.source[self.pos + 2] == '.') {
+                // =.. (univ operator)
+                self.pos += 3;
+                return Token{ .tag = .atom, .value = "=..", .start = start };
+            }
             // Check if followed by '(' - if so, it's a functor (atom)
             if (self.pos + 1 < self.source.len and self.source[self.pos + 1] == '(') {
                 self.pos += 1;
@@ -534,7 +614,7 @@ pub const Lexer = struct {
 
         if (char == '"') {
             self.pos += 1; // skip opening quote
-            var buffer = std.ArrayListUnmanaged(u8){};
+            var buffer: std.ArrayListUnmanaged(u8) = .empty;
 
             while (self.pos < self.source.len and self.source[self.pos] != '"') {
                 if (self.source[self.pos] == '\\') {
@@ -565,7 +645,7 @@ pub const Lexer = struct {
 
         if (char == '\'') {
             self.pos += 1; // skip opening quote
-            var buffer = std.ArrayListUnmanaged(u8){};
+            var buffer: std.ArrayListUnmanaged(u8) = .empty;
 
             while (self.pos < self.source.len and self.source[self.pos] != '\'') {
                 if (self.source[self.pos] == '\\') {
@@ -602,17 +682,17 @@ pub const Lexer = struct {
                     // Binary: 0b followed by binary digits (with digit grouping)
                     self.pos += 2; // skip '0b'
                     self.skipDigitGroupsForRadix(2);
-                    return Token{ .tag = .number, .value = self.source[start..self.pos], .start = start };
+                    return self.makeToken(.number, self.source[start..self.pos], start);
                 } else if (next_char == 'o' or next_char == 'O') {
                     // Octal: 0o followed by octal digits (with digit grouping)
                     self.pos += 2; // skip '0o'
                     self.skipDigitGroupsForRadix(8);
-                    return Token{ .tag = .number, .value = self.source[start..self.pos], .start = start };
+                    return self.makeToken(.number, self.source[start..self.pos], start);
                 } else if (next_char == 'x' or next_char == 'X') {
                     // Hexadecimal: 0x followed by hex digits (with digit grouping)
                     self.pos += 2; // skip '0x'
                     self.skipDigitGroupsForRadix(16);
-                    return Token{ .tag = .number, .value = self.source[start..self.pos], .start = start };
+                    return self.makeToken(.number, self.source[start..self.pos], start);
                 }
             }
 
@@ -627,12 +707,17 @@ pub const Lexer = struct {
 
                 // Parse digits in specified radix
                 const digit_start = self.pos;
-                // For Edinburgh syntax, we don't know the radix yet, so use 36 (max)
-                self.skipDigitGroupsForRadix(36);
+
+                // Extract the radix from the already-parsed number
+                const radix_str = self.source[start..quote_pos];
+                const radix = std.fmt.parseInt(u8, radix_str, 10) catch 36;
+
+                // Use the actual radix for digit grouping (allows space for radix <= 10)
+                self.skipDigitGroupsForRadix(radix);
 
                 // If we found at least one digit after ', it's Edinburgh syntax
                 if (self.pos > digit_start) {
-                    return Token{ .tag = .number, .value = self.source[start..self.pos], .start = start };
+                    return self.makeToken(.number, self.source[start..self.pos], start);
                 } else {
                     // No digits after ', restore position
                     self.pos = quote_pos;
@@ -654,14 +739,14 @@ pub const Lexer = struct {
                                 std.mem.eql(u8, remaining[0..3], "NaN")))
                         {
                             self.pos += 3;
-                            return Token{ .tag = .number, .value = self.source[start..self.pos], .start = start };
+                            return self.makeToken(.number, self.source[start..self.pos], start);
                         }
                     }
 
-                    return Token{ .tag = .number, .value = self.source[start..self.pos], .start = start };
+                    return self.makeToken(.number, self.source[start..self.pos], start);
                 }
             }
-            return Token{ .tag = .number, .value = self.source[start..self.pos], .start = start };
+            return self.makeToken(.number, self.source[start..self.pos], start);
         }
 
         if (std.ascii.isLower(char)) {
@@ -686,8 +771,10 @@ pub const Lexer = struct {
 
     pub fn peek(self: *Lexer) Token {
         const saved_pos = self.pos;
+        const saved_last_token = self.last_token_type;
         const tok = self.next();
         self.pos = saved_pos;
+        self.last_token_type = saved_last_token;
         return tok;
     }
 };
