@@ -36,6 +36,7 @@ pub const Parser = struct {
         Comparison,
         Sum,
         Product,
+        Power,
         Prefix,
         Call,
         fn int(self: Precedence) u8 {
@@ -46,10 +47,11 @@ pub const Parser = struct {
     fn getPrecedence(tag: TokenType) Precedence {
         return switch (tag) {
             .semicolon => .LogicOr,
-            .if_then => .IfThen,
+            .if_then, .soft_cut => .IfThen,
             .equal, .greater, .less, .greater_equal, .less_equal, .not_equal, .arith_equal, .arith_not_equal, .is => .Comparison,
             .plus, .minus => .Sum,
             .mul, .div, .int_div => .Product,
+            .power => .Power,
             .lparen => .Call,
             else => .Lowest,
         };
@@ -122,25 +124,36 @@ pub const Parser = struct {
         // Strip digit separators (underscores, spaces, comments)
         const clean_value = try self.stripDigitSeparators(value);
 
+        const has_sign = clean_value.len > 0 and (clean_value[0] == '-' or clean_value[0] == '+');
+        const sign_char = if (has_sign) clean_value[0] else '+';
+        const unsigned_value = if (has_sign) clean_value[1..] else clean_value;
+
+        if (unsigned_value.len == 0) {
+            return error.UnexpectedToken;
+        }
+
         // ISO syntax: 0b, 0o, 0x
-        if (clean_value.len >= 2 and clean_value[0] == '0') {
-            const prefix = clean_value[1];
+        if (unsigned_value.len >= 2 and unsigned_value[0] == '0') {
+            const prefix = unsigned_value[1];
             if (prefix == 'b' or prefix == 'B') {
                 // Binary
-                return try std.fmt.parseInt(i64, clean_value[2..], 2);
+                const magnitude = try std.fmt.parseInt(i64, unsigned_value[2..], 2);
+                return if (sign_char == '-') -magnitude else magnitude;
             } else if (prefix == 'o' or prefix == 'O') {
                 // Octal
-                return try std.fmt.parseInt(i64, clean_value[2..], 8);
+                const magnitude = try std.fmt.parseInt(i64, unsigned_value[2..], 8);
+                return if (sign_char == '-') -magnitude else magnitude;
             } else if (prefix == 'x' or prefix == 'X') {
                 // Hexadecimal
-                return try std.fmt.parseInt(i64, clean_value[2..], 16);
+                const magnitude = try std.fmt.parseInt(i64, unsigned_value[2..], 16);
+                return if (sign_char == '-') -magnitude else magnitude;
             }
         }
 
         // Edinburgh syntax: radix'number
-        if (std.mem.indexOfScalar(u8, clean_value, '\'')) |quote_pos| {
-            const radix_str = clean_value[0..quote_pos];
-            const number_str = clean_value[quote_pos + 1 ..];
+        if (std.mem.indexOfScalar(u8, unsigned_value, '\'')) |quote_pos| {
+            const radix_str = unsigned_value[0..quote_pos];
+            const number_str = unsigned_value[quote_pos + 1 ..];
 
             // Parse radix (must be 2-36)
             const radix = try std.fmt.parseInt(u8, radix_str, 10);
@@ -149,7 +162,8 @@ pub const Parser = struct {
             }
 
             // Parse number in specified radix
-            return try std.fmt.parseInt(i64, number_str, radix);
+            const magnitude = try std.fmt.parseInt(i64, number_str, radix);
+            return if (sign_char == '-') -magnitude else magnitude;
         }
 
         // Regular decimal
@@ -161,7 +175,8 @@ pub const Parser = struct {
             std.mem.eql(u8, value, "mod") or
             std.mem.eql(u8, value, "rem") or
             std.mem.eql(u8, value, "min") or
-            std.mem.eql(u8, value, "max");
+            std.mem.eql(u8, value, "max") or
+            std.mem.eql(u8, value, "=..");
     }
 
     pub fn parseTerm(self: *Parser) ParseError!*Term {
@@ -176,7 +191,7 @@ pub const Parser = struct {
 
             // Check if next token is an infix operator (including special atoms)
             const is_infix_op = switch (tok.tag) {
-                .plus, .minus, .mul, .div, .int_div, .greater, .less, .greater_equal, .less_equal, .not_equal, .equal, .arith_equal, .arith_not_equal, .is, .semicolon, .if_then => true,
+                .plus, .minus, .mul, .div, .int_div, .power, .greater, .less, .greater_equal, .less_equal, .not_equal, .equal, .arith_equal, .arith_not_equal, .is, .semicolon, .if_then, .soft_cut => true,
                 .atom => isInfixAtom(tok.value),
                 else => false,
             };
@@ -192,7 +207,7 @@ pub const Parser = struct {
 
             _ = self.lexer.next();
             const right = try self.parseExpression(op_prec);
-            var args = std.ArrayListUnmanaged(*Term){};
+            var args: std.ArrayListUnmanaged(*Term) = .empty;
             try args.append(self.alloc, left);
             try args.append(self.alloc, right);
             left = try Term.createStructure(self.alloc, tok.value, try args.toOwnedSlice(self.alloc));
@@ -270,7 +285,7 @@ pub const Parser = struct {
             },
             .not => {
                 const right = try self.parseExpression(.Prefix);
-                var args = std.ArrayListUnmanaged(*Term){};
+                var args: std.ArrayListUnmanaged(*Term) = .empty;
                 try args.append(self.alloc, right);
                 return try Term.createStructure(self.alloc, "\\+", try args.toOwnedSlice(self.alloc));
             },
@@ -299,7 +314,7 @@ pub const Parser = struct {
             tail = try Term.createAtom(self.alloc, "[]");
         }
 
-        var args = std.ArrayListUnmanaged(*Term){};
+        var args: std.ArrayListUnmanaged(*Term) = .empty;
         try args.append(self.alloc, head);
         try args.append(self.alloc, tail);
         return try Term.createStructure(self.alloc, ".", try args.toOwnedSlice(self.alloc));
@@ -308,7 +323,7 @@ pub const Parser = struct {
     fn parseAtomOrStructure(self: *Parser, name: []const u8) ParseError!*Term {
         if (self.lexer.peek().tag == .lparen) {
             _ = self.lexer.next();
-            var args = std.ArrayListUnmanaged(*Term){};
+            var args: std.ArrayListUnmanaged(*Term) = .empty;
             try args.append(self.alloc, try self.parseTerm());
             while (self.lexer.peek().tag == .comma) {
                 _ = self.lexer.next();
@@ -322,7 +337,7 @@ pub const Parser = struct {
 
     pub fn parseRule(self: *Parser) ParseError!Rule {
         const head = try self.parseTerm();
-        var body = std.ArrayListUnmanaged(*Term){};
+        var body: std.ArrayListUnmanaged(*Term) = .empty;
         const next_tok = self.lexer.next();
         if (next_tok.tag == .period) {
             return Rule{ .head = head, .body = try body.toOwnedSlice(self.alloc) };
@@ -344,7 +359,7 @@ pub const Parser = struct {
             // But for DCG expansion, it's easier to treat the body as a single term (conjunction) first, or expand term by term.
             // Let's parse the body terms first.
 
-            var dcg_body_terms = std.ArrayListUnmanaged(*Term){};
+            var dcg_body_terms: std.ArrayListUnmanaged(*Term) = .empty;
             try dcg_body_terms.append(self.alloc, try self.parseTerm());
             while (self.lexer.peek().tag == .comma) {
                 _ = self.lexer.next();
@@ -374,7 +389,7 @@ pub const Parser = struct {
             var current_S = S0;
 
             // 3. Expand body terms
-            var expanded_body = std.ArrayListUnmanaged(*Term){};
+            var expanded_body: std.ArrayListUnmanaged(*Term) = .empty;
 
             for (dcg_body_terms.items) |term| {
                 const next_S = try createVar(self.alloc, var_counter);
@@ -486,7 +501,7 @@ pub const Parser = struct {
     }
 
     pub fn parseQuery(self: *Parser) ParseError![]*Term {
-        var goals = std.ArrayListUnmanaged(*Term){};
+        var goals: std.ArrayListUnmanaged(*Term) = .empty;
         try goals.append(self.alloc, try self.parseTerm());
         while (self.lexer.peek().tag == .comma) {
             _ = self.lexer.next();
@@ -731,6 +746,48 @@ test "Parser - non-decimal numbers ISO syntax" {
         const rule = try parser.parseRule();
         const expr = rule.head.structure.args[1];
         try std.testing.expectEqual(@as(i64, 255), expr.number);
+    }
+}
+
+test "Parser - signed non-decimal numbers ISO syntax" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // Binary: -0b101 = -5
+    {
+        const source = "X is -0b101.";
+        var parser = Parser.init(alloc, source);
+        const rule = try parser.parseRule();
+        const expr = rule.head.structure.args[1];
+        try std.testing.expectEqual(@as(i64, -5), expr.number);
+    }
+
+    // Octal: -0o10 = -8
+    {
+        const source = "X is -0o10.";
+        var parser = Parser.init(alloc, source);
+        const rule = try parser.parseRule();
+        const expr = rule.head.structure.args[1];
+        try std.testing.expectEqual(@as(i64, -8), expr.number);
+    }
+
+    // Hexadecimal: -0xFF = -255
+    {
+        const source = "X is -0xFF.";
+        var parser = Parser.init(alloc, source);
+        const rule = try parser.parseRule();
+        const expr = rule.head.structure.args[1];
+        try std.testing.expectEqual(@as(i64, -255), expr.number);
+    }
+
+    // Uppercase prefix: -0X2A = -42
+    {
+        const source = "X is -0X2A.";
+        var parser = Parser.init(alloc, source);
+        const rule = try parser.parseRule();
+        const expr = rule.head.structure.args[1];
+        try std.testing.expectEqual(@as(i64, -42), expr.number);
     }
 }
 

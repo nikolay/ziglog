@@ -39,7 +39,13 @@ fn evaluateNullaryFunction(name: []const u8) !NumericValue {
 ///
 /// Operators:
 /// - Unary: abs, sign, -
+/// - Rounding: floor, ceiling, round, truncate (return integer)
+/// - Type conversion: float (returns float)
+/// - Math functions: sqrt, exp, log (return float)
+/// - Trigonometric: sin, cos, tan, atan (return float)
 /// - Binary arithmetic: +, -, *, / (always float), // (int div), div, mod, rem
+/// - Power: **, ^ (return float)
+/// - Two-argument: atan2 (returns float)
 /// - Min/max: min, max
 /// - Nullary functions: nan, inf
 ///
@@ -82,6 +88,64 @@ pub fn evaluate(term: *Term, env: anytype, resolveFn: anytype) !NumericValue {
                         .float => |f| .{ .float = -f },
                     };
                 }
+
+                // Rounding functions - always return integer
+                if (std.mem.eql(u8, s.functor, "floor")) {
+                    const f = arg.toFloat();
+                    return .{ .int = @intFromFloat(@floor(f)) };
+                }
+                if (std.mem.eql(u8, s.functor, "ceiling")) {
+                    const f = arg.toFloat();
+                    return .{ .int = @intFromFloat(@ceil(f)) };
+                }
+                if (std.mem.eql(u8, s.functor, "round")) {
+                    const f = arg.toFloat();
+                    return .{ .int = @intFromFloat(@round(f)) };
+                }
+                if (std.mem.eql(u8, s.functor, "truncate")) {
+                    const f = arg.toFloat();
+                    return .{ .int = @intFromFloat(@trunc(f)) };
+                }
+
+                // Float conversion - always returns float
+                if (std.mem.eql(u8, s.functor, "float")) {
+                    return .{ .float = arg.toFloat() };
+                }
+
+                // Square root - always returns float
+                if (std.mem.eql(u8, s.functor, "sqrt")) {
+                    const f = arg.toFloat();
+                    return .{ .float = @sqrt(f) };
+                }
+
+                // Trigonometric functions - always return float
+                if (std.mem.eql(u8, s.functor, "sin")) {
+                    const f = arg.toFloat();
+                    return .{ .float = @sin(f) };
+                }
+                if (std.mem.eql(u8, s.functor, "cos")) {
+                    const f = arg.toFloat();
+                    return .{ .float = @cos(f) };
+                }
+                if (std.mem.eql(u8, s.functor, "tan")) {
+                    const f = arg.toFloat();
+                    return .{ .float = @tan(f) };
+                }
+                if (std.mem.eql(u8, s.functor, "atan")) {
+                    const f = arg.toFloat();
+                    return .{ .float = std.math.atan(f) };
+                }
+
+                // Exponential and logarithm - always return float
+                if (std.mem.eql(u8, s.functor, "exp")) {
+                    const f = arg.toFloat();
+                    return .{ .float = @exp(f) };
+                }
+                if (std.mem.eql(u8, s.functor, "log")) {
+                    const f = arg.toFloat();
+                    return .{ .float = @log(f) };
+                }
+
                 return error.UnknownOperator;
             }
 
@@ -94,25 +158,19 @@ pub fn evaluate(term: *Term, env: anytype, resolveFn: anytype) !NumericValue {
                 const use_float = !left.isInt() or !right.isInt();
 
                 // Basic arithmetic - if either is float, result is float
-                if (std.mem.eql(u8, s.functor, "+")) {
+                const is_add = std.mem.eql(u8, s.functor, "+");
+                const is_sub = std.mem.eql(u8, s.functor, "-");
+                const is_mul = std.mem.eql(u8, s.functor, "*");
+
+                if (is_add or is_sub or is_mul) {
                     if (use_float) {
-                        return .{ .float = left.toFloat() + right.toFloat() };
+                        const lf = left.toFloat();
+                        const rf = right.toFloat();
+                        const result = if (is_add) lf + rf else if (is_sub) lf - rf else lf * rf;
+                        return .{ .float = result };
                     } else {
-                        return .{ .int = left.int + right.int };
-                    }
-                }
-                if (std.mem.eql(u8, s.functor, "-")) {
-                    if (use_float) {
-                        return .{ .float = left.toFloat() - right.toFloat() };
-                    } else {
-                        return .{ .int = left.int - right.int };
-                    }
-                }
-                if (std.mem.eql(u8, s.functor, "*")) {
-                    if (use_float) {
-                        return .{ .float = left.toFloat() * right.toFloat() };
-                    } else {
-                        return .{ .int = left.int * right.int };
+                        const result = if (is_add) left.int + right.int else if (is_sub) left.int - right.int else left.int * right.int;
+                        return .{ .int = result };
                     }
                 }
 
@@ -121,46 +179,58 @@ pub fn evaluate(term: *Term, env: anytype, resolveFn: anytype) !NumericValue {
                     return .{ .float = left.toFloat() / right.toFloat() };
                 }
 
-                // Integer division operators - only work on integers
-                if (std.mem.eql(u8, s.functor, "//")) {
-                    if (!left.isInt() or !right.isInt()) return error.TypeException;
-                    return .{ .int = @divTrunc(left.int, right.int) };
-                }
-                if (std.mem.eql(u8, s.functor, "div")) {
-                    if (!left.isInt() or !right.isInt()) return error.TypeException;
-                    return .{ .int = @divFloor(left.int, right.int) };
-                }
+                // Integer-only operators: division and modulo/remainder
+                const is_int_div = std.mem.eql(u8, s.functor, "//");
+                const is_div = std.mem.eql(u8, s.functor, "div");
+                const is_mod = std.mem.eql(u8, s.functor, "mod");
+                const is_rem = std.mem.eql(u8, s.functor, "rem");
 
-                // Modulo and remainder - integer only
-                if (std.mem.eql(u8, s.functor, "mod")) {
+                if (is_int_div or is_div or is_mod or is_rem) {
                     if (!left.isInt() or !right.isInt()) return error.TypeException;
-                    const div_result = @divFloor(left.int, right.int);
-                    return .{ .int = left.int - (div_result * right.int) };
-                }
-                if (std.mem.eql(u8, s.functor, "rem")) {
-                    if (!left.isInt() or !right.isInt()) return error.TypeException;
-                    const div_result = @divTrunc(left.int, right.int);
-                    return .{ .int = left.int - (div_result * right.int) };
-                }
 
-                // Min/max
-                if (std.mem.eql(u8, s.functor, "min")) {
-                    if (use_float) {
-                        const lf = left.toFloat();
-                        const rf = right.toFloat();
-                        return .{ .float = if (lf < rf) lf else rf };
+                    if (is_int_div) {
+                        return .{ .int = @divTrunc(left.int, right.int) };
+                    } else if (is_div) {
+                        return .{ .int = @divFloor(left.int, right.int) };
                     } else {
-                        return .{ .int = if (left.int < right.int) left.int else right.int };
+                        // mod or rem: compute via division and subtraction
+                        const div_result = if (is_mod) @divFloor(left.int, right.int) else @divTrunc(left.int, right.int);
+                        return .{ .int = left.int - (div_result * right.int) };
                     }
                 }
-                if (std.mem.eql(u8, s.functor, "max")) {
-                    if (use_float) {
-                        const lf = left.toFloat();
-                        const rf = right.toFloat();
-                        return .{ .float = if (lf > rf) lf else rf };
+
+                // Min/max - ISO Prolog: preserve type of winning value
+                if (std.mem.eql(u8, s.functor, "min") or std.mem.eql(u8, s.functor, "max")) {
+                    const is_min = std.mem.eql(u8, s.functor, "min");
+                    // Compare numerically (converting to float if needed)
+                    const lf = left.toFloat();
+                    const rf = right.toFloat();
+                    // Return the winning value in its original type
+                    const left_wins = if (is_min) lf < rf else lf > rf;
+                    const right_wins = if (is_min) rf < lf else rf > lf;
+
+                    if (left_wins) {
+                        return left;
+                    } else if (right_wins) {
+                        return right;
                     } else {
-                        return .{ .int = if (left.int > right.int) left.int else right.int };
+                        // Equal values: if types differ, prefer float (ISO behavior)
+                        return if (use_float) (if (left.isInt()) right else left) else left;
                     }
+                }
+
+                // Power operator - always returns float
+                if (std.mem.eql(u8, s.functor, "**") or std.mem.eql(u8, s.functor, "^")) {
+                    const lf = left.toFloat();
+                    const rf = right.toFloat();
+                    return .{ .float = std.math.pow(f64, lf, rf) };
+                }
+
+                // atan2 - two-argument arctangent
+                if (std.mem.eql(u8, s.functor, "atan2")) {
+                    const lf = left.toFloat();
+                    const rf = right.toFloat();
+                    return .{ .float = std.math.atan2(lf, rf) };
                 }
             }
             return error.UnknownOperator;
@@ -211,4 +281,172 @@ test "arithmetic - type promotion" {
     const result = try evaluate(expr, empty_env, identity);
     try std.testing.expect(result == .float);
     try std.testing.expectApproxEqAbs(@as(f64, 25.0), result.float, 0.001);
+}
+
+test "arithmetic - rounding functions" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const EmptyEnv = struct {};
+    const empty_env = EmptyEnv{};
+    const identity = struct {
+        fn resolve(t: *Term, _: EmptyEnv) *Term {
+            return t;
+        }
+    }.resolve;
+
+    // Test floor
+    const floor_val = try Term.createFloat(alloc, 3.7);
+    const floor_expr = try Term.createStructure(alloc, "floor", &[_]*Term{floor_val});
+    const floor_result = try evaluate(floor_expr, empty_env, identity);
+    try std.testing.expectEqual(NumericValue{ .int = 3 }, floor_result);
+
+    // Test ceiling
+    const ceil_val = try Term.createFloat(alloc, 3.2);
+    const ceil_expr = try Term.createStructure(alloc, "ceiling", &[_]*Term{ceil_val});
+    const ceil_result = try evaluate(ceil_expr, empty_env, identity);
+    try std.testing.expectEqual(NumericValue{ .int = 4 }, ceil_result);
+
+    // Test round
+    const round_val = try Term.createFloat(alloc, 3.5);
+    const round_expr = try Term.createStructure(alloc, "round", &[_]*Term{round_val});
+    const round_result = try evaluate(round_expr, empty_env, identity);
+    try std.testing.expectEqual(NumericValue{ .int = 4 }, round_result);
+
+    // Test truncate
+    const trunc_val = try Term.createFloat(alloc, -3.7);
+    const trunc_expr = try Term.createStructure(alloc, "truncate", &[_]*Term{trunc_val});
+    const trunc_result = try evaluate(trunc_expr, empty_env, identity);
+    try std.testing.expectEqual(NumericValue{ .int = -3 }, trunc_result);
+}
+
+test "arithmetic - math functions" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const EmptyEnv = struct {};
+    const empty_env = EmptyEnv{};
+    const identity = struct {
+        fn resolve(t: *Term, _: EmptyEnv) *Term {
+            return t;
+        }
+    }.resolve;
+
+    // Test sqrt
+    const sqrt_val = try Term.createNumber(alloc, 16);
+    const sqrt_expr = try Term.createStructure(alloc, "sqrt", &[_]*Term{sqrt_val});
+    const sqrt_result = try evaluate(sqrt_expr, empty_env, identity);
+    try std.testing.expect(sqrt_result == .float);
+    try std.testing.expectApproxEqAbs(@as(f64, 4.0), sqrt_result.float, 0.0001);
+
+    // Test exp
+    const exp_val = try Term.createNumber(alloc, 1);
+    const exp_expr = try Term.createStructure(alloc, "exp", &[_]*Term{exp_val});
+    const exp_result = try evaluate(exp_expr, empty_env, identity);
+    try std.testing.expect(exp_result == .float);
+    try std.testing.expectApproxEqAbs(@as(f64, 2.71828), exp_result.float, 0.0001);
+
+    // Test log (natural logarithm)
+    const log_val = try Term.createFloat(alloc, 2.71828);
+    const log_expr = try Term.createStructure(alloc, "log", &[_]*Term{log_val});
+    const log_result = try evaluate(log_expr, empty_env, identity);
+    try std.testing.expect(log_result == .float);
+    try std.testing.expectApproxEqAbs(@as(f64, 1.0), log_result.float, 0.0001);
+}
+
+test "arithmetic - trigonometric functions" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const EmptyEnv = struct {};
+    const empty_env = EmptyEnv{};
+    const identity = struct {
+        fn resolve(t: *Term, _: EmptyEnv) *Term {
+            return t;
+        }
+    }.resolve;
+
+    const pi = std.math.pi;
+
+    // Test sin
+    const sin_val = try Term.createFloat(alloc, pi / 2.0);
+    const sin_expr = try Term.createStructure(alloc, "sin", &[_]*Term{sin_val});
+    const sin_result = try evaluate(sin_expr, empty_env, identity);
+    try std.testing.expect(sin_result == .float);
+    try std.testing.expectApproxEqAbs(@as(f64, 1.0), sin_result.float, 0.0001);
+
+    // Test cos
+    const cos_val = try Term.createFloat(alloc, 0.0);
+    const cos_expr = try Term.createStructure(alloc, "cos", &[_]*Term{cos_val});
+    const cos_result = try evaluate(cos_expr, empty_env, identity);
+    try std.testing.expect(cos_result == .float);
+    try std.testing.expectApproxEqAbs(@as(f64, 1.0), cos_result.float, 0.0001);
+
+    // Test tan
+    const tan_val = try Term.createFloat(alloc, pi / 4.0);
+    const tan_expr = try Term.createStructure(alloc, "tan", &[_]*Term{tan_val});
+    const tan_result = try evaluate(tan_expr, empty_env, identity);
+    try std.testing.expect(tan_result == .float);
+    try std.testing.expectApproxEqAbs(@as(f64, 1.0), tan_result.float, 0.0001);
+
+    // Test atan
+    const atan_val = try Term.createNumber(alloc, 1);
+    const atan_expr = try Term.createStructure(alloc, "atan", &[_]*Term{atan_val});
+    const atan_result = try evaluate(atan_expr, empty_env, identity);
+    try std.testing.expect(atan_result == .float);
+    try std.testing.expectApproxEqAbs(@as(f64, pi / 4.0), atan_result.float, 0.0001);
+}
+
+test "arithmetic - power and atan2" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const EmptyEnv = struct {};
+    const empty_env = EmptyEnv{};
+    const identity = struct {
+        fn resolve(t: *Term, _: EmptyEnv) *Term {
+            return t;
+        }
+    }.resolve;
+
+    // Test power operator **
+    const base = try Term.createNumber(alloc, 2);
+    const exp = try Term.createNumber(alloc, 3);
+    const pow_expr = try Term.createStructure(alloc, "**", &[_]*Term{ base, exp });
+    const pow_result = try evaluate(pow_expr, empty_env, identity);
+    try std.testing.expect(pow_result == .float);
+    try std.testing.expectApproxEqAbs(@as(f64, 8.0), pow_result.float, 0.0001);
+
+    // Test atan2
+    const y = try Term.createNumber(alloc, 1);
+    const x = try Term.createNumber(alloc, 1);
+    const atan2_expr = try Term.createStructure(alloc, "atan2", &[_]*Term{ y, x });
+    const atan2_result = try evaluate(atan2_expr, empty_env, identity);
+    try std.testing.expect(atan2_result == .float);
+    try std.testing.expectApproxEqAbs(@as(f64, std.math.pi / 4.0), atan2_result.float, 0.0001);
+}
+
+test "arithmetic - float conversion" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const EmptyEnv = struct {};
+    const empty_env = EmptyEnv{};
+    const identity = struct {
+        fn resolve(t: *Term, _: EmptyEnv) *Term {
+            return t;
+        }
+    }.resolve;
+
+    // Test float conversion from integer
+    const int_val = try Term.createNumber(alloc, 42);
+    const float_expr = try Term.createStructure(alloc, "float", &[_]*Term{int_val});
+    const float_result = try evaluate(float_expr, empty_env, identity);
+    try std.testing.expect(float_result == .float);
+    try std.testing.expectApproxEqAbs(@as(f64, 42.0), float_result.float, 0.0001);
 }

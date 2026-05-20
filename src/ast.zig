@@ -1,6 +1,9 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
+// Global SWI-Prolog compatibility mode flag
+pub var swi_compat_mode: bool = false;
+
 /// SWI-Prolog canonical representations for special float values.
 /// These constants ensure consistent formatting across the codebase.
 const INF_REPR = "1.0Inf";
@@ -99,9 +102,21 @@ pub const Term = union(TermType) {
         }
     }
 
-    pub fn format(self: Term, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+    pub fn format(self: Term, comptime fmt: []const u8, options: std.fmt.Options, writer: anytype) !void {
         switch (self) {
             .atom => |s| {
+                // Special case: empty list [] should never be quoted
+                if (std.mem.eql(u8, s, "[]")) {
+                    try writer.print("[]", .{});
+                    return;
+                }
+
+                // In SWI-compat mode, print atoms without quotes
+                if (swi_compat_mode) {
+                    try writer.print("{s}", .{s});
+                    return;
+                }
+
                 var needs_quotes = false;
                 if (s.len == 0) {
                     needs_quotes = true;
@@ -145,7 +160,13 @@ pub const Term = union(TermType) {
                     try writer.print("{d}", .{f});
                 }
             },
-            .string => |s| try writer.print("\"{s}\"", .{s}),
+            .string => |s| {
+                if (swi_compat_mode) {
+                    try writer.print("{s}", .{s});
+                } else {
+                    try writer.print("\"{s}\"", .{s});
+                }
+            },
             .structure => |s| {
                 if (s.args.len == 2 and (std.mem.eql(u8, s.functor, "+") or
                     std.mem.eql(u8, s.functor, "-") or
@@ -161,7 +182,11 @@ pub const Term = union(TermType) {
                     std.mem.eql(u8, s.functor, ";")))
                 {
                     try s.args[0].format(fmt, options, writer);
-                    try writer.print(" {s} ", .{s.functor});
+                    if (swi_compat_mode) {
+                        try writer.print("{s}", .{s.functor});
+                    } else {
+                        try writer.print(" {s} ", .{s.functor});
+                    }
                     try s.args[1].format(fmt, options, writer);
                 } else if (std.mem.eql(u8, s.functor, ".") and s.args.len == 2) {
                     // List printing
@@ -179,7 +204,11 @@ pub const Term = union(TermType) {
                             },
                             .structure => |st| {
                                 if (std.mem.eql(u8, st.functor, ".") and st.args.len == 2) {
-                                    try writer.print(", ", .{});
+                                    if (swi_compat_mode) {
+                                        try writer.print(",", .{});
+                                    } else {
+                                        try writer.print(", ", .{});
+                                    }
                                     try st.args[0].format(fmt, options, writer);
                                     current = st.args[1];
                                 } else {
@@ -199,7 +228,13 @@ pub const Term = union(TermType) {
                 } else {
                     try writer.print("{s}(", .{s.functor});
                     for (s.args, 0..) |arg, i| {
-                        if (i > 0) try writer.print(", ", .{});
+                        if (i > 0) {
+                            if (swi_compat_mode) {
+                                try writer.print(",", .{});
+                            } else {
+                                try writer.print(", ", .{});
+                            }
+                        }
                         try arg.format(fmt, options, writer);
                     }
                     try writer.print(")", .{});
@@ -241,7 +276,7 @@ test "AST - structure creation" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var args = std.ArrayListUnmanaged(*Term){};
+    var args: std.ArrayListUnmanaged(*Term) = .empty;
     try args.append(alloc, try Term.createAtom(alloc, "a"));
     try args.append(alloc, try Term.createNumber(alloc, 1));
 
@@ -258,9 +293,10 @@ test "AST - formatting" {
 
     const t = try Term.createStructure(alloc, "f", &[_]*Term{ try Term.createAtom(alloc, "a"), try Term.createNumber(alloc, 10) });
 
-    var buf = std.ArrayListUnmanaged(u8){};
-    try t.format("", .{}, buf.writer(alloc));
-    try std.testing.expectEqualStrings("f(a, 10)", buf.items);
+    var buf = std.Io.Writer.Allocating.init(alloc);
+    defer buf.deinit();
+    try t.format("", .{}, &buf.writer);
+    try std.testing.expectEqualStrings("f(a, 10)", buf.writer.buffer[0..buf.writer.end]);
 }
 
 test "AST - list formatting" {
@@ -275,10 +311,10 @@ test "AST - list formatting" {
     const one = try Term.createNumber(alloc, 1);
     const l1 = try Term.createStructure(alloc, ".", &[_]*Term{ one, l2 });
 
-    var buf = std.ArrayListUnmanaged(u8){};
-    defer buf.deinit(alloc);
-    try l1.format("", .{}, buf.writer(alloc));
-    try std.testing.expectEqualStrings("[1, 2]", buf.items);
+    var buf = std.Io.Writer.Allocating.init(alloc);
+    defer buf.deinit();
+    try l1.format("", .{}, &buf.writer);
+    try std.testing.expectEqualStrings("[1, 2]", buf.writer.buffer[0..buf.writer.end]);
 }
 
 test "AST - formatting atoms" {
@@ -286,47 +322,47 @@ test "AST - formatting atoms" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var buf = std.ArrayListUnmanaged(u8){};
-    defer buf.deinit(alloc);
+    var buf = std.Io.Writer.Allocating.init(alloc);
+    defer buf.deinit();
 
     // Simple atom
     {
-        buf.clearRetainingCapacity();
+        buf.writer.end = 0;
         const t = try Term.createAtom(alloc, "simple");
-        try t.format("", .{}, buf.writer(alloc));
-        try std.testing.expectEqualStrings("simple", buf.items);
+        try t.format("", .{}, &buf.writer);
+        try std.testing.expectEqualStrings("simple", buf.writer.buffer[0..buf.writer.end]);
     }
 
     // Atom with space
     {
-        buf.clearRetainingCapacity();
+        buf.writer.end = 0;
         const t = try Term.createAtom(alloc, "with space");
-        try t.format("", .{}, buf.writer(alloc));
-        try std.testing.expectEqualStrings("'with space'", buf.items);
+        try t.format("", .{}, &buf.writer);
+        try std.testing.expectEqualStrings("'with space'", buf.writer.buffer[0..buf.writer.end]);
     }
 
     // Atom with quote
     {
-        buf.clearRetainingCapacity();
+        buf.writer.end = 0;
         const t = try Term.createAtom(alloc, "it's");
-        try t.format("", .{}, buf.writer(alloc));
-        try std.testing.expectEqualStrings("'it''s'", buf.items);
+        try t.format("", .{}, &buf.writer);
+        try std.testing.expectEqualStrings("'it''s'", buf.writer.buffer[0..buf.writer.end]);
     }
 
     // Uppercase atom (symbol)
     {
-        buf.clearRetainingCapacity();
+        buf.writer.end = 0;
         const t = try Term.createAtom(alloc, "Symbol");
-        try t.format("", .{}, buf.writer(alloc));
-        try std.testing.expectEqualStrings("'Symbol'", buf.items);
+        try t.format("", .{}, &buf.writer);
+        try std.testing.expectEqualStrings("'Symbol'", buf.writer.buffer[0..buf.writer.end]);
     }
 
     // Empty atom
     {
-        buf.clearRetainingCapacity();
+        buf.writer.end = 0;
         const t = try Term.createAtom(alloc, "");
-        try t.format("", .{}, buf.writer(alloc));
-        try std.testing.expectEqualStrings("''", buf.items);
+        try t.format("", .{}, &buf.writer);
+        try std.testing.expectEqualStrings("''", buf.writer.buffer[0..buf.writer.end]);
     }
 }
 
@@ -341,10 +377,10 @@ test "AST - float creation and formatting" {
     try std.testing.expectEqual(3.14159, f.float);
 
     // Test float formatting
-    var buf = std.ArrayListUnmanaged(u8){};
-    defer buf.deinit(alloc);
-    try f.format("", .{}, buf.writer(alloc));
-    try std.testing.expectEqualStrings("3.14159", buf.items);
+    var buf = std.Io.Writer.Allocating.init(alloc);
+    defer buf.deinit();
+    try f.format("", .{}, &buf.writer);
+    try std.testing.expectEqualStrings("3.14159", buf.writer.buffer[0..buf.writer.end]);
 
     // Test float hashing (should not crash)
     const hash1 = f.hash();

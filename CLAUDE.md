@@ -72,6 +72,11 @@
 
 #### 4. Engine (`src/engine.zig`)
 - **Unification**: `unify(t1, t2, env)` - pattern matching algorithm
+  - Internal `unifyInternal()` with comptime flag for occurs check
+  - `unify()` - standard unification (no occurs check)
+  - `unifyWithOccursCheck()` - sound unification preventing cyclic terms
+- **Type Testing**: Unified via `getTypeTestKind()` and `checkTypeTest()` helpers
+  - Supports: `var/1`, `nonvar/1`, `atom/1`, `integer/1`, `float/1`, `number/1`, `atomic/1`, `compound/1`, `callable/1`, `ground/1`, `acyclic_term/1`
 - **Resolution**: SLD resolution with backtracking
 - **Environment**: Variable bindings stored in `EnvMap`
 - **Arithmetic**: Evaluates `is/2` expressions
@@ -81,10 +86,14 @@
   - `repeat/0` - Infinite choice points (use with cut)
   - `(Cond -> Then)` - If-then (commits on first solution)
   - `(Cond -> Then ; Else)` - If-then-else
+  - `(Cond *-> Then)` - Soft cut (commits to first condition, backtracks in then)
+  - `(Cond *-> Then ; Else)` - Soft cut with else
   - `;/2` - Disjunction (OR)
   - `\+/1`, `not/1` - Negation as failure
 - **I/O Predicates**: `write/1`, `nl/0`, `format/1`, `format/2`
-- **Meta-predicates**: `distinct/2`, `phrase/2`, `phrase/3` (DCG)
+- **Meta-predicates**: `distinct/2`, `phrase/2`, `phrase/3` (DCG), `findall/3`, `bagof/3`, `setof/3`
+- **Dynamic Database Predicates**: `assert/1`, `asserta/1`, `assertz/1`, `retract/1`, `retractall/1`, `abolish/1`, `clause/2`
+- **Occurs Check Predicates**: `unify_with_occurs_check/2`, `acyclic_term/1`
 
 #### 5. Engine Optimizations
 - **First-Argument Indexing** (`src/indexing.zig`): O(1) clause lookup by functor and first argument
@@ -92,7 +101,7 @@
 - Both optimizations are transparent and preserve Prolog semantics
 
 #### 6. REPL (`src/main.zig`)
-- Interactive query interface powered by replxx (C++ readline alternative)
+- Interactive query interface powered by isocline (pure C readline alternative)
 - **Editing Features**:
   - **Live syntax highlighting**: Real-time colorization as you type
   - Tab completion for built-in and user-defined predicates
@@ -104,11 +113,9 @@
 - **Commands**: `:help`, `:load <file>`, `:quit`, `:clear`
 - **Tab Completion** (`src/completion.zig`): Completes REPL commands, built-ins, and user predicates
 - **Syntax Highlighting** (`src/highlighter.zig`):
-  - `highlightForReplxx()`: Fills replxx color buffer for live highlighting
-  - `highlight()`: ANSI color codes for terminal output
-  - Separate color mappings for both modes
-- **Replxx Integration** (`src/replxx.zig`, `src/replxx/`): Zig wrapper around ClickHouse fork of replxx (BSD-licensed C++ library with 18 source files)
-- **Replxx Helper** (`src/replxx/replxx_helper.cxx`): C++ glue code to instantiate replxx with stdin/stdout/stderr
+  - `highlightForIsocline()`: Fills isocline color buffer for live highlighting
+  - Separate color mappings for syntax elements
+- **Isocline Integration** (`src/isocline_wrapper.zig`, `src/isocline/`): Zig wrapper around isocline C library
 - Displays all solutions with backtracking
 
 ## Code Style & Standards
@@ -179,13 +186,13 @@
 ## Testing Strategy
 
 ### Unit Tests (Inline)
-- **67 test cases** covering lexer, parser, AST, engine, indexing, arithmetic, floats, escape sequences, Unicode, non-decimal numbers, digit grouping, infinity/NaN
+- **84 test cases** covering lexer, parser, AST, engine, indexing, arithmetic, floats, escape sequences, Unicode, non-decimal numbers, digit grouping, infinity/NaN, dynamic predicates, occurs check, math functions
 - Located inline in source files
 - Run with: `zig build test`
 - Use ArenaAllocator in tests for automatic cleanup
 
 ### Integration Tests (.pl files)
-- **311 test queries** in `tests/integration/` across 16 test files
+- **512 test queries** in `tests/integration/` across 22 test files
 - Tests real-world Prolog usage with natural syntax
 - Test files:
   - `basic.pl` - Core functionality (17 tests)
@@ -204,6 +211,12 @@
   - `digit_grouping.pl` - Digit grouping syntax (16 tests)
   - `infinity_nan.pl` - Infinity and NaN floats (26 tests)
   - `control.pl` - Control predicates (31 tests)
+  - `dynamic.pl` - Dynamic database predicates (32 tests)
+  - `collection.pl` - Collection predicates (30 tests)
+  - `occurs_check.pl` - Occurs check and sound unification (30 tests)
+  - `math.pl` - Advanced math functions (57 tests)
+  - `term_variables.pl` - Term variable extraction (30 tests)
+  - `soft_cut.pl` - Soft cut operator (8 tests)
 - Run with: `zig build test-integration`
 - Format: See `tests/README.md`
 

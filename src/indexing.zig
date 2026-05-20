@@ -29,7 +29,7 @@ pub const ClauseIndex = struct {
             .by_functor = .{},
             .by_first_arg = .{},
             .var_first_arg = .{},
-            .unindexed = .{},
+            .unindexed = .empty,
         };
     }
 
@@ -73,7 +73,7 @@ pub const ClauseIndex = struct {
                 );
                 var functor_entry = try self.by_functor.getOrPut(self.alloc, functor_key);
                 if (!functor_entry.found_existing) {
-                    functor_entry.value_ptr.* = .{};
+                    functor_entry.value_ptr.* = .empty;
                 }
                 try functor_entry.value_ptr.append(self.alloc, clause_idx);
 
@@ -85,7 +85,7 @@ pub const ClauseIndex = struct {
                             const hash = first_arg.hash();
                             var arg_entry = try self.by_first_arg.getOrPut(self.alloc, hash);
                             if (!arg_entry.found_existing) {
-                                arg_entry.value_ptr.* = .{};
+                                arg_entry.value_ptr.* = .empty;
                             }
                             try arg_entry.value_ptr.append(self.alloc, clause_idx);
                         },
@@ -93,7 +93,7 @@ pub const ClauseIndex = struct {
                             // Track clauses with variable first argument
                             var var_entry = try self.var_first_arg.getOrPut(self.alloc, functor_key);
                             if (!var_entry.found_existing) {
-                                var_entry.value_ptr.* = .{};
+                                var_entry.value_ptr.* = .empty;
                             }
                             try var_entry.value_ptr.append(self.alloc, clause_idx);
                         },
@@ -108,7 +108,7 @@ pub const ClauseIndex = struct {
                 const functor_key = try std.fmt.allocPrint(self.alloc, "{s}/0", .{head.atom});
                 var functor_entry = try self.by_functor.getOrPut(self.alloc, functor_key);
                 if (!functor_entry.found_existing) {
-                    functor_entry.value_ptr.* = .{};
+                    functor_entry.value_ptr.* = .empty;
                 }
                 try functor_entry.value_ptr.append(self.alloc, clause_idx);
             },
@@ -121,7 +121,7 @@ pub const ClauseIndex = struct {
                 const hash = head.hash();
                 var arg_entry = try self.by_first_arg.getOrPut(self.alloc, hash);
                 if (!arg_entry.found_existing) {
-                    arg_entry.value_ptr.* = .{};
+                    arg_entry.value_ptr.* = .empty;
                 }
                 try arg_entry.value_ptr.append(self.alloc, clause_idx);
             },
@@ -131,7 +131,7 @@ pub const ClauseIndex = struct {
     /// Get candidate clause indices for a goal
     /// Returns the most specific index available
     pub fn getCandidates(self: *ClauseIndex, goal: *Term) !std.ArrayListUnmanaged(usize) {
-        var candidates = std.ArrayListUnmanaged(usize){};
+        var candidates: std.ArrayListUnmanaged(usize) = .empty;
 
         switch (goal.*) {
             .structure => |s| {

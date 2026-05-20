@@ -17,8 +17,8 @@ const TestCase = struct {
     line_num: usize,
 };
 
-pub fn runTestFile(allocator: Allocator, file_path: []const u8) !void {
-    const content = try std.fs.cwd().readFileAlloc(allocator, file_path, 10 * 1024 * 1024); // 10MB max
+pub fn runTestFile(allocator: Allocator, io: std.Io, file_path: []const u8) !void {
+    const content = try std.Io.Dir.cwd().readFileAlloc(io, file_path, allocator, .limited(10 * 1024 * 1024)); // 10MB max
     defer allocator.free(content);
 
     var arena = std.heap.ArenaAllocator.init(allocator);
@@ -31,7 +31,7 @@ pub fn runTestFile(allocator: Allocator, file_path: []const u8) !void {
     var line_iter = std.mem.splitScalar(u8, content, '\n');
     var line_num: usize = 0;
 
-    var current_expects = std.ArrayListUnmanaged([]const u8){};
+    var current_expects: std.ArrayListUnmanaged([]const u8) = .empty;
     defer {
         for (current_expects.items) |item| {
             allocator.free(item);
@@ -76,12 +76,12 @@ pub fn runTestFile(allocator: Allocator, file_path: []const u8) !void {
                 continue;
             };
 
-            var buf = std.ArrayListUnmanaged(u8){};
-            defer buf.deinit(alloc);
+            var buf = std.Io.Writer.Allocating.init(alloc);
+            defer buf.deinit();
 
             var has_printed = false;
             const TestHandlerContext = struct {
-                buf: *std.ArrayListUnmanaged(u8),
+                buf: *std.Io.Writer.Allocating,
                 alloc: Allocator,
                 has_printed: *bool,
             };
@@ -89,7 +89,7 @@ pub fn runTestFile(allocator: Allocator, file_path: []const u8) !void {
             const testHandle = struct {
                 fn handle(ctx_ptr: ?*anyopaque, env: EnvMap, _: *Engine) !void {
                     const ctx: *TestHandlerContext = @ptrCast(@alignCast(ctx_ptr));
-                    const out_writer = ctx.buf.writer(ctx.alloc);
+                    const out_writer = &ctx.buf.writer;
                     if (ctx.has_printed.*) {
                         try out_writer.print("\n", .{});
                     }
@@ -119,7 +119,7 @@ pub fn runTestFile(allocator: Allocator, file_path: []const u8) !void {
             var env = EnvMap{};
             defer env.deinit(alloc);
 
-            _ = engine.solve(goals, &env, 0, 0, handler, buf.writer(alloc)) catch |err| {
+            _ = engine.solve(goals, &env, 0, 0, handler, &buf.writer) catch |err| {
                 std.debug.print("❌ {s}:{d}: Runtime error: {}\n", .{ file_path, line_num, err });
                 failed = true;
                 for (current_expects.items) |item| allocator.free(item);
@@ -127,7 +127,7 @@ pub fn runTestFile(allocator: Allocator, file_path: []const u8) !void {
                 continue;
             };
 
-            const output = buf.items;
+            const output = buf.written();
 
             // Check expectations
             if (current_expects.items.len > 0) {

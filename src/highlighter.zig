@@ -79,6 +79,7 @@ fn getStyleForToken(tag: TokenType) ?[*:0]const u8 {
         .turnstile => "cyan", // :-
         .arrow => "cyan", // -->
         .if_then => "cyan", // ->
+        .soft_cut => "cyan", // *->
         .lparen, .rparen => null, // default color
         .lbracket, .rbracket => "dodgerblue",
         .lbrace, .rbrace => null, // default color
@@ -105,6 +106,7 @@ fn getStyleForToken(tag: TokenType) ?[*:0]const u8 {
         .mul => "cyan",
         .div => "cyan",
         .int_div => "cyan", // // (integer division)
+        .power => "cyan", // ** (power/exponentiation)
 
         // Default/unknown
         .eof => null,

@@ -33,16 +33,34 @@
 ?- X is 7 rem 3.
 
 % Unary operators
-% abs - absolute value
+% abs - absolute value (ISO: preserves type)
 % EXPECT: X = 42
 ?- X is abs(42).
 
-% sign - returns -1, 0, or 1
+% EXPECT: X = 5.5
+?- X is abs(-5.5).
+
+% EXPECT: X = 3.14
+?- X is abs(3.14).
+
+% sign - returns -1, 0, or 1 (ISO: preserves type)
 % EXPECT: X = 1
 ?- X is sign(42).
 
 % EXPECT: X = 0
 ?- X is sign(0).
+
+% EXPECT: X = -1
+?- X is sign(-10).
+
+% EXPECT: X = 1.0
+?- X is sign(3.14).
+
+% EXPECT: X = -1.0
+?- X is sign(-2.5).
+
+% EXPECT: X = 0.0
+?- X is sign(0.0).
 
 % Min/max operators
 % EXPECT: X = 3
@@ -50,6 +68,32 @@
 
 % EXPECT: X = 7
 ?- X is max(3, 7).
+
+% ISO Prolog: min/max preserve type of winning value
+% EXPECT: X = 3
+?- X is max(3, 2.5).
+
+% EXPECT: X = 3
+?- X is max(2.5, 3).
+
+% EXPECT: X = 2
+?- X is min(2, 5.5).
+
+% EXPECT: X = 2
+?- X is min(5.5, 2).
+
+% When winner is float, result is float
+% EXPECT: X = 2.5
+?- X is max(2.5, 2).
+
+% EXPECT: X = 2.5
+?- X is max(2, 2.5).
+
+% EXPECT: X = 5.5
+?- X is min(5.5, 6).
+
+% EXPECT: X = 5.5
+?- X is min(6, 5.5).
 
 % Comparison operators (existing)
 % EXPECT: true

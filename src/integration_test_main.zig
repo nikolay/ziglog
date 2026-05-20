@@ -1,10 +1,8 @@
 const std = @import("std");
 const test_runner = @import("test_runner.zig");
 
-pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
+pub fn main(init: std.process.Init) !void {
+    const allocator = init.gpa;
 
     const test_files = [_][]const u8{
         "tests/integration/basic.pl",
@@ -23,6 +21,12 @@ pub fn main() !void {
         "tests/integration/digit_grouping.pl",
         "tests/integration/infinity_nan.pl",
         "tests/integration/control.pl",
+        "tests/integration/dynamic.pl",
+        "tests/integration/collection.pl",
+        "tests/integration/occurs_check.pl",
+        "tests/integration/math.pl",
+        "tests/integration/term_variables.pl",
+        "tests/integration/soft_cut.pl",
     };
 
     var failed = false;
@@ -35,7 +39,7 @@ pub fn main() !void {
 
     for (test_files) |file| {
         std.debug.print("Running {s}...\n", .{file});
-        test_runner.runTestFile(allocator, file) catch |err| {
+        test_runner.runTestFile(allocator, init.io, file) catch |err| {
             if (err == error.TestsFailed) {
                 failed = true;
                 total_failed += 1;

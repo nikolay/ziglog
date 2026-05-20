@@ -1,125 +1,82 @@
-# Ziglog Integration Tests
+# Ziglog Test Suite
 
-This directory contains integration tests for Ziglog using `.pl` (Prolog) files.
+This directory contains test files for Ziglog's ISO Prolog compliance.
 
-## Test File Format
+## Test Files
 
-Test files use a simple format with special comment directives:
+### Phase 1 ISO Compliance Tests
 
-```prolog
-% Regular comments are ignored (Prolog standard % syntax)
-
-% Facts and rules are loaded into the engine
-person(alice, female).
-person(bob, male).
-
-parent(X, Y) :- mother(X, Y).
-parent(X, Y) :- father(X, Y).
-
-% EXPECT: <expected output>
-% Use EXPECT directives to specify what the next query should produce
-% Multiple EXPECT lines test for multiple solutions
-
-% EXPECT: true
-?- person(alice, female).
-
-% EXPECT: X = alice
-% EXPECT: Y = female
-?- person(X, Y).
-
-% EXPECT: false
-% Use "false" to test that a query should fail
-?- person(charlie, male).
+**`run_phase1_tests.sh`** - Main test runner
+```bash
+./tests/run_phase1_tests.sh
 ```
 
-## Directives
+Tests all Phase 1 predicates:
+- Type testing (10 predicates)
+- Term decomposition (3 predicates)
+- copy_term/2
+- Atom processing (3 predicates)
 
-### `% EXPECT: <output>`
-Specifies expected output for the next query. Multiple `EXPECT` lines can be used to verify multiple solutions.
+**Expected output:** All 18 tests should show `true`
 
-**Examples:**
+### Test Files
 
-```prolog
-% Expect success with no variables
-% EXPECT: true
-?- likes(mary, wine).
-
-% Expect specific variable bindings
-% EXPECT: X = 5
-?- X is 2 + 3.
-
-% Expect multiple solutions
-% EXPECT: X = 1
-% EXPECT: X = 2
-?- member(X, [1, 2]).
-
-% Expect failure
-% EXPECT: false
-?- member(5, [1, 2, 3]).
-
-% Expect multiple variable bindings
-% EXPECT: X = a
-% EXPECT: Y = b
-?- foo(X, Y) = foo(a, b).
-```
+- **`iso_phase1_tests.pl`** - Prolog test predicates for manual testing
+- **`test_iso_phase1.sh`** - Detailed test runner with individual test results (alternative)
 
 ## Running Tests
 
+### Quick Test
 ```bash
-# Run only integration tests
-zig build test-integration
-
-# Run only unit tests
-zig build test
-
-# Run all tests
-zig build test-all
+cd /path/to/ziglog
+./tests/run_phase1_tests.sh
 ```
 
-## Test Organization
+### Manual Testing
+```bash
+./zig-out/bin/ziglog tests/iso_phase1_tests.pl
+?- run_all_tests.
+```
 
-- **basic.pl** - Core Prolog functionality (facts, rules, unification, arithmetic)
-- **family.pl** - Family relationships (tests the indexing bug fix)
-- **lists.pl** - List operations (append, member, length, reverse)
-- **dcg.pl** - Definite Clause Grammars
+### Individual Predicate Testing
+```bash
+./zig-out/bin/ziglog
+?- var(X).
+?- functor(foo(a,b), F, A).
+?- atom_chars(hello, L).
+```
+
+## Test Coverage
+
+### Type Testing (10/10)
+- ✅ var/1, nonvar/1
+- ✅ atom/1, integer/1, float/1, number/1
+- ✅ atomic/1, compound/1, callable/1, ground/1
+
+### Term Decomposition (4/4)
+- ✅ functor/3
+- ✅ arg/3
+- ✅ =../2 (univ)
+- ✅ copy_term/2
+
+### Atom Processing (3/3)
+- ✅ atom_length/2
+- ✅ atom_concat/3
+- ✅ atom_chars/2
 
 ## Adding New Tests
 
-1. Create a new `.pl` file in `tests/integration/`
-2. Add facts, rules, and queries with EXPECT directives
-3. Add the file to `src/integration_test_main.zig` in the `test_files` array
-4. Run `zig build test-integration` to verify
+To add tests for new predicates:
 
-## Test Output
-
-The test runner will:
-- ✓ Show a checkmark for passing tests
-- ❌ Show an X for failing tests with details
-- Display a summary at the end
-
-Example output:
-```
-Running tests/integration/family.pl...
-✓ tests/integration/family.pl:18
-✓ tests/integration/family.pl:21
-✓ tests/integration/family.pl:25
-✓ tests/integration/family.pl:29
-✓ tests/integration/family.pl:33
-✓ tests/integration/family.pl:37
-
-tests/integration/family.pl: 6/6 queries passed
-
-✅ All tests passed!
+1. Add test case to `run_phase1_tests.sh`:
+```bash
+'?- your_predicate(args).' \
 ```
 
-## Why Integration Tests?
+2. Update the test count in the output message
 
-Integration tests complement unit tests by:
+3. Run the test suite to verify
 
-1. **Testing real-world usage** - Uses actual Prolog syntax, not Zig API calls
-2. **Better coverage** - Easy to add many test cases
-3. **More readable** - Prolog syntax is clearer than Zig construction
-4. **Catches integration bugs** - Tests the full parser → engine → output pipeline
-5. **User-friendly** - Non-Zig developers can contribute tests
+## Documentation
 
-The family.pl test file specifically caught the indexing bug where rules with variable first arguments were not being matched against ground queries!
+See `docs/ISO_PHASE1_IMPLEMENTATION.md` for complete documentation of all implemented predicates.
