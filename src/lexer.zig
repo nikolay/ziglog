@@ -297,7 +297,7 @@ pub const Lexer = struct {
                 self.pos += 1;
             }
             // Unterminated block comment - reached end of source
-            return Token{ .tag = .eof, .value = "Unterminated block comment", .start = self.pos };
+            return self.makeToken(.eof, "Unterminated block comment", self.pos);
         }
 
         // Skip comments (% to end of line)
@@ -314,7 +314,7 @@ pub const Lexer = struct {
         }
 
         if (self.pos >= self.source.len) {
-            return Token{ .tag = .eof, .value = "", .start = self.pos };
+            return self.makeToken(.eof, "", self.pos);
         }
 
         const start = self.pos;
@@ -322,7 +322,7 @@ pub const Lexer = struct {
 
         if (char == ':' and self.pos + 1 < self.source.len and self.source[self.pos + 1] == '-') {
             self.pos += 2;
-            return Token{ .tag = .turnstile, .value = ":-", .start = start };
+            return self.makeToken(.turnstile, ":-", start);
         }
         if (char == '\\') {
             if (self.pos + 1 < self.source.len) {
@@ -330,104 +330,104 @@ pub const Lexer = struct {
                     // Check if '\\+' followed by '(' - if so, it's a functor (atom)
                     if (self.pos + 2 < self.source.len and self.source[self.pos + 2] == '(') {
                         self.pos += 2;
-                        return Token{ .tag = .atom, .value = "\\+", .start = start };
+                        return self.makeToken(.atom, "\\+", start);
                     }
                     self.pos += 2;
-                    return Token{ .tag = .not, .value = "\\+", .start = start };
+                    return self.makeToken(.not, "\\+", start);
                 }
                 if (self.source[self.pos + 1] == '=') {
                     // Check if '\\=' followed by '(' - if so, it's a functor (atom)
                     if (self.pos + 2 < self.source.len and self.source[self.pos + 2] == '(') {
                         self.pos += 2;
-                        return Token{ .tag = .atom, .value = "\\=", .start = start };
+                        return self.makeToken(.atom, "\\=", start);
                     }
                     self.pos += 2;
-                    return Token{ .tag = .not_equal, .value = "\\=", .start = start };
+                    return self.makeToken(.not_equal, "\\=", start);
                 }
             }
         }
         if (char == '!') {
             self.pos += 1;
-            return Token{ .tag = .atom, .value = "!", .start = start };
+            return self.makeToken(.atom, "!", start);
         }
 
         if (char == '(') {
             self.pos += 1;
-            return Token{ .tag = .lparen, .value = "(", .start = start };
+            return self.makeToken(.lparen, "(", start);
         }
         if (char == ')') {
             self.pos += 1;
-            return Token{ .tag = .rparen, .value = ")", .start = start };
+            return self.makeToken(.rparen, ")", start);
         }
         if (char == '[') {
             self.pos += 1;
-            return Token{ .tag = .lbracket, .value = "[", .start = start };
+            return self.makeToken(.lbracket, "[", start);
         }
         if (char == ']') {
             self.pos += 1;
-            return Token{ .tag = .rbracket, .value = "]", .start = start };
+            return self.makeToken(.rbracket, "]", start);
         }
         if (char == '{') {
             self.pos += 1;
-            return Token{ .tag = .lbrace, .value = "{", .start = start };
+            return self.makeToken(.lbrace, "{", start);
         }
         if (char == '}') {
             self.pos += 1;
-            return Token{ .tag = .rbrace, .value = "}", .start = start };
+            return self.makeToken(.rbrace, "}", start);
         }
         if (char == '|') {
             self.pos += 1;
-            return Token{ .tag = .bar, .value = "|", .start = start };
+            return self.makeToken(.bar, "|", start);
         }
         if (char == ',') {
             // Check if followed by '(' - if so, it's a functor (atom)
             if (self.pos + 1 < self.source.len and self.source[self.pos + 1] == '(') {
                 self.pos += 1;
-                return Token{ .tag = .atom, .value = ",", .start = start };
+                return self.makeToken(.atom, ",", start);
             }
             self.pos += 1;
-            return Token{ .tag = .comma, .value = ",", .start = start };
+            return self.makeToken(.comma, ",", start);
         }
         if (char == '.') {
             // Check if followed by '(' - if so, it's the list cons operator (atom)
             if (self.pos + 1 < self.source.len and self.source[self.pos + 1] == '(') {
                 self.pos += 1;
-                return Token{ .tag = .atom, .value = ".", .start = start };
+                return self.makeToken(.atom, ".", start);
             }
             self.pos += 1;
-            return Token{ .tag = .period, .value = ".", .start = start };
+            return self.makeToken(.period, ".", start);
         }
         if (char == ';') {
             // Check if followed by '(' - if so, it's a functor (atom)
             if (self.pos + 1 < self.source.len and self.source[self.pos + 1] == '(') {
                 self.pos += 1;
-                return Token{ .tag = .atom, .value = ";", .start = start };
+                return self.makeToken(.atom, ";", start);
             }
             self.pos += 1;
-            return Token{ .tag = .semicolon, .value = ";", .start = start };
+            return self.makeToken(.semicolon, ";", start);
         }
         if (char == '+') {
             // Check if followed by '(' - if so, it's a functor (atom)
             if (self.pos + 1 < self.source.len and self.source[self.pos + 1] == '(') {
                 self.pos += 1;
-                return Token{ .tag = .atom, .value = "+", .start = start };
+                return self.makeToken(.atom, "+", start);
             }
             self.pos += 1;
-            return Token{ .tag = .plus, .value = "+", .start = start };
+            return self.makeToken(.plus, "+", start);
         }
         if (char == '-') {
             if (self.pos + 2 < self.source.len and self.source[self.pos + 1] == '-' and self.source[self.pos + 2] == '>') {
                 self.pos += 3;
-                return Token{ .tag = .arrow, .value = "-->", .start = start };
+                return self.makeToken(.arrow, "-->", start);
             }
             if (self.pos + 1 < self.source.len and self.source[self.pos + 1] == '>') {
                 self.pos += 2;
-                return Token{ .tag = .if_then, .value = "->", .start = start };
+                return self.makeToken(.if_then, "->", start);
             }
             // Check if followed by '(' - if so, it's a functor (atom)
             if (self.pos + 1 < self.source.len and self.source[self.pos + 1] == '(') {
                 self.pos += 1;
-                return Token{ .tag = .atom, .value = "-", .start = start };
+                return self.makeToken(.atom, "-", start);
             }
             // Check if followed immediately by a digit - if so, it MIGHT be a negative number literal
             // Only treat it as a negative literal if it doesn't follow a number/rparen/rbracket
@@ -488,121 +488,121 @@ pub const Lexer = struct {
             // Check for *-> (soft cut operator)
             if (self.pos + 2 < self.source.len and self.source[self.pos + 1] == '-' and self.source[self.pos + 2] == '>') {
                 self.pos += 3;
-                return Token{ .tag = .soft_cut, .value = "*->", .start = start };
+                return self.makeToken(.soft_cut, "*->", start);
             }
             // Check for ** (power operator)
             if (self.pos + 1 < self.source.len and self.source[self.pos + 1] == '*') {
                 // Check if **followed by '(' - if so, it's a functor (atom)
                 if (self.pos + 2 < self.source.len and self.source[self.pos + 2] == '(') {
                     self.pos += 2;
-                    return Token{ .tag = .atom, .value = "**", .start = start };
+                    return self.makeToken(.atom, "**", start);
                 }
                 self.pos += 2;
-                return Token{ .tag = .power, .value = "**", .start = start };
+                return self.makeToken(.power, "**", start);
             }
             // Check if followed by '(' - if so, it's a functor (atom)
             if (self.pos + 1 < self.source.len and self.source[self.pos + 1] == '(') {
                 self.pos += 1;
-                return Token{ .tag = .atom, .value = "*", .start = start };
+                return self.makeToken(.atom, "*", start);
             }
             self.pos += 1;
-            return Token{ .tag = .mul, .value = "*", .start = start };
+            return self.makeToken(.mul, "*", start);
         }
         if (char == '/') {
             if (self.pos + 1 < self.source.len and self.source[self.pos + 1] == '/') {
                 // Check if '//' followed by '(' - if so, it's a functor (atom)
                 if (self.pos + 2 < self.source.len and self.source[self.pos + 2] == '(') {
                     self.pos += 2;
-                    return Token{ .tag = .atom, .value = "//", .start = start };
+                    return self.makeToken(.atom, "//", start);
                 }
                 self.pos += 2;
-                return Token{ .tag = .int_div, .value = "//", .start = start };
+                return self.makeToken(.int_div, "//", start);
             }
             // Check if followed by '(' - if so, it's a functor (atom)
             if (self.pos + 1 < self.source.len and self.source[self.pos + 1] == '(') {
                 self.pos += 1;
-                return Token{ .tag = .atom, .value = "/", .start = start };
+                return self.makeToken(.atom, "/", start);
             }
             self.pos += 1;
-            return Token{ .tag = .div, .value = "/", .start = start };
+            return self.makeToken(.div, "/", start);
         }
         if (char == '>') {
             if (self.pos + 1 < self.source.len and self.source[self.pos + 1] == '=') {
                 // Check if '>=' followed by '(' - if so, it's a functor (atom)
                 if (self.pos + 2 < self.source.len and self.source[self.pos + 2] == '(') {
                     self.pos += 2;
-                    return Token{ .tag = .atom, .value = ">=", .start = start };
+                    return self.makeToken(.atom, ">=", start);
                 }
                 self.pos += 2;
-                return Token{ .tag = .greater_equal, .value = ">=", .start = start };
+                return self.makeToken(.greater_equal, ">=", start);
             }
             // Check if followed by '(' - if so, it's a functor (atom)
             if (self.pos + 1 < self.source.len and self.source[self.pos + 1] == '(') {
                 self.pos += 1;
-                return Token{ .tag = .atom, .value = ">", .start = start };
+                return self.makeToken(.atom, ">", start);
             }
             self.pos += 1;
-            return Token{ .tag = .greater, .value = ">", .start = start };
+            return self.makeToken(.greater, ">", start);
         }
         if (char == '<') {
             // Check if followed by '(' - if so, it's a functor (atom)
             if (self.pos + 1 < self.source.len and self.source[self.pos + 1] == '(') {
                 self.pos += 1;
-                return Token{ .tag = .atom, .value = "<", .start = start };
+                return self.makeToken(.atom, "<", start);
             }
             self.pos += 1;
-            return Token{ .tag = .less, .value = "<", .start = start };
+            return self.makeToken(.less, "<", start);
         }
         if (char == '=') {
             if (self.pos + 1 < self.source.len and self.source[self.pos + 1] == '<') {
                 // Check if '=<' followed by '(' - if so, it's a functor (atom)
                 if (self.pos + 2 < self.source.len and self.source[self.pos + 2] == '(') {
                     self.pos += 2;
-                    return Token{ .tag = .atom, .value = "=<", .start = start };
+                    return self.makeToken(.atom, "=<", start);
                 }
                 self.pos += 2;
-                return Token{ .tag = .less_equal, .value = "=<", .start = start };
+                return self.makeToken(.less_equal, "=<", start);
             }
             if (self.pos + 2 < self.source.len and self.source[self.pos + 1] == ':' and self.source[self.pos + 2] == '=') {
                 // Check if '=:=' followed by '(' - if so, it's a functor (atom)
                 if (self.pos + 3 < self.source.len and self.source[self.pos + 3] == '(') {
                     self.pos += 3;
-                    return Token{ .tag = .atom, .value = "=:=", .start = start };
+                    return self.makeToken(.atom, "=:=", start);
                 }
                 self.pos += 3;
-                return Token{ .tag = .arith_equal, .value = "=:=", .start = start };
+                return self.makeToken(.arith_equal, "=:=", start);
             }
             if (self.pos + 2 < self.source.len and self.source[self.pos + 1] == '\\' and self.source[self.pos + 2] == '=') {
                 // Check if '=\\=' followed by '(' - if so, it's a functor (atom)
                 if (self.pos + 3 < self.source.len and self.source[self.pos + 3] == '(') {
                     self.pos += 3;
-                    return Token{ .tag = .atom, .value = "=\\=", .start = start };
+                    return self.makeToken(.atom, "=\\=", start);
                 }
                 self.pos += 3;
-                return Token{ .tag = .arith_not_equal, .value = "=\\=", .start = start };
+                return self.makeToken(.arith_not_equal, "=\\=", start);
             }
             if (self.pos + 2 < self.source.len and self.source[self.pos + 1] == '.' and self.source[self.pos + 2] == '.') {
                 // =.. (univ operator)
                 self.pos += 3;
-                return Token{ .tag = .atom, .value = "=..", .start = start };
+                return self.makeToken(.atom, "=..", start);
             }
             // Check if followed by '(' - if so, it's a functor (atom)
             if (self.pos + 1 < self.source.len and self.source[self.pos + 1] == '(') {
                 self.pos += 1;
-                return Token{ .tag = .atom, .value = "=", .start = start };
+                return self.makeToken(.atom, "=", start);
             }
             self.pos += 1;
-            return Token{ .tag = .equal, .value = "=", .start = start };
+            return self.makeToken(.equal, "=", start);
         }
         if (char == '\\') {
             if (self.pos + 1 < self.source.len and self.source[self.pos + 1] == '=') {
                 // Check if '\\=' followed by '(' - if so, it's a functor (atom)
                 if (self.pos + 2 < self.source.len and self.source[self.pos + 2] == '(') {
                     self.pos += 2;
-                    return Token{ .tag = .atom, .value = "\\=", .start = start };
+                    return self.makeToken(.atom, "\\=", start);
                 }
                 self.pos += 2;
-                return Token{ .tag = .not_equal, .value = "\\=", .start = start };
+                return self.makeToken(.not_equal, "\\=", start);
             }
             // Fallthrough to \+ check which is handled earlier or error?
             // Actually \+ is handled earlier. If we are here, it's not \+.
@@ -620,12 +620,12 @@ pub const Lexer = struct {
                 if (self.source[self.pos] == '\\') {
                     self.parseEscapeSequence(&buffer) catch {
                         buffer.deinit(self.alloc);
-                        return Token{ .tag = .eof, .value = "Invalid escape sequence", .start = start };
+                        return self.makeToken(.eof, "Invalid escape sequence", start);
                     };
                 } else {
                     buffer.append(self.alloc, self.source[self.pos]) catch {
                         buffer.deinit(self.alloc);
-                        return Token{ .tag = .eof, .value = "Out of memory", .start = start };
+                        return self.makeToken(.eof, "Out of memory", start);
                     };
                     self.pos += 1;
                 }
@@ -635,12 +635,12 @@ pub const Lexer = struct {
                 self.pos += 1; // skip closing quote
                 const value = buffer.toOwnedSlice(self.alloc) catch {
                     buffer.deinit(self.alloc);
-                    return Token{ .tag = .eof, .value = "Out of memory", .start = start };
+                    return self.makeToken(.eof, "Out of memory", start);
                 };
-                return Token{ .tag = .string, .value = value, .start = start };
+                return self.makeToken(.string, value, start);
             }
             buffer.deinit(self.alloc);
-            return Token{ .tag = .eof, .value = "Unterminated string", .start = start };
+            return self.makeToken(.eof, "Unterminated string", start);
         }
 
         if (char == '\'') {
@@ -651,12 +651,12 @@ pub const Lexer = struct {
                 if (self.source[self.pos] == '\\') {
                     self.parseEscapeSequence(&buffer) catch {
                         buffer.deinit(self.alloc);
-                        return Token{ .tag = .eof, .value = "Invalid escape sequence", .start = start };
+                        return self.makeToken(.eof, "Invalid escape sequence", start);
                     };
                 } else {
                     buffer.append(self.alloc, self.source[self.pos]) catch {
                         buffer.deinit(self.alloc);
-                        return Token{ .tag = .eof, .value = "Out of memory", .start = start };
+                        return self.makeToken(.eof, "Out of memory", start);
                     };
                     self.pos += 1;
                 }
@@ -666,12 +666,12 @@ pub const Lexer = struct {
                 self.pos += 1; // skip closing quote
                 const value = buffer.toOwnedSlice(self.alloc) catch {
                     buffer.deinit(self.alloc);
-                    return Token{ .tag = .eof, .value = "Out of memory", .start = start };
+                    return self.makeToken(.eof, "Out of memory", start);
                 };
-                return Token{ .tag = .atom, .value = value, .start = start };
+                return self.makeToken(.atom, value, start);
             }
             buffer.deinit(self.alloc);
-            return Token{ .tag = .eof, .value = "Unterminated atom", .start = start };
+            return self.makeToken(.eof, "Unterminated atom", start);
         }
 
         if (std.ascii.isDigit(char)) {
@@ -754,19 +754,19 @@ pub const Lexer = struct {
                 self.pos += 1;
             }
             const val = self.source[start..self.pos];
-            if (std.mem.eql(u8, val, "is")) return Token{ .tag = .is, .value = val, .start = start };
-            return Token{ .tag = .atom, .value = val, .start = start };
+            if (std.mem.eql(u8, val, "is")) return self.makeToken(.is, val, start);
+            return self.makeToken(.atom, val, start);
         }
 
         if (std.ascii.isUpper(char) or char == '_') {
             while (self.pos < self.source.len and isAlphaNumeric(self.source[self.pos])) {
                 self.pos += 1;
             }
-            return Token{ .tag = .variable, .value = self.source[start..self.pos], .start = start };
+            return self.makeToken(.variable, self.source[start..self.pos], start);
         }
 
         self.pos += 1;
-        return Token{ .tag = .eof, .value = "Error", .start = start };
+        return self.makeToken(.eof, "Error", start);
     }
 
     pub fn peek(self: *Lexer) Token {
@@ -1180,6 +1180,59 @@ test "Lexer - non-decimal numbers ISO syntax" {
     const t7 = l5.next();
     try std.testing.expectEqual(TokenType.number, t7.tag);
     try std.testing.expectEqualStrings("0xf00", t7.value);
+}
+
+test "Lexer - minus context uses previous token type" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // After plus, signed non-decimal literals should stay a single number token.
+    {
+        const source = "1 + -0x10";
+        var lexer = Lexer.init(alloc, source);
+
+        try std.testing.expectEqual(TokenType.number, lexer.next().tag);
+        try std.testing.expectEqual(TokenType.plus, lexer.next().tag);
+
+        const signed_hex = lexer.next();
+        try std.testing.expectEqual(TokenType.number, signed_hex.tag);
+        try std.testing.expectEqualStrings("-0x10", signed_hex.value);
+    }
+
+    // After a parenthesized term, '-' should be subtraction, not a signed literal.
+    {
+        const source = "(foo)-2";
+        var lexer = Lexer.init(alloc, source);
+
+        try std.testing.expectEqual(TokenType.lparen, lexer.next().tag);
+        try std.testing.expectEqual(TokenType.atom, lexer.next().tag);
+        try std.testing.expectEqual(TokenType.rparen, lexer.next().tag);
+
+        const minus = lexer.next();
+        try std.testing.expectEqual(TokenType.minus, minus.tag);
+
+        const rhs = lexer.next();
+        try std.testing.expectEqual(TokenType.number, rhs.tag);
+        try std.testing.expectEqualStrings("2", rhs.value);
+    }
+
+    // After a closed list, '-' should also be subtraction.
+    {
+        const source = "[a]-2";
+        var lexer = Lexer.init(alloc, source);
+
+        try std.testing.expectEqual(TokenType.lbracket, lexer.next().tag);
+        try std.testing.expectEqual(TokenType.atom, lexer.next().tag);
+        try std.testing.expectEqual(TokenType.rbracket, lexer.next().tag);
+
+        const minus = lexer.next();
+        try std.testing.expectEqual(TokenType.minus, minus.tag);
+
+        const rhs = lexer.next();
+        try std.testing.expectEqual(TokenType.number, rhs.tag);
+        try std.testing.expectEqualStrings("2", rhs.value);
+    }
 }
 
 test "Lexer - non-decimal numbers Edinburgh syntax" {

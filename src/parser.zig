@@ -124,25 +124,36 @@ pub const Parser = struct {
         // Strip digit separators (underscores, spaces, comments)
         const clean_value = try self.stripDigitSeparators(value);
 
+        const has_sign = clean_value.len > 0 and (clean_value[0] == '-' or clean_value[0] == '+');
+        const sign_char = if (has_sign) clean_value[0] else '+';
+        const unsigned_value = if (has_sign) clean_value[1..] else clean_value;
+
+        if (unsigned_value.len == 0) {
+            return error.UnexpectedToken;
+        }
+
         // ISO syntax: 0b, 0o, 0x
-        if (clean_value.len >= 2 and clean_value[0] == '0') {
-            const prefix = clean_value[1];
+        if (unsigned_value.len >= 2 and unsigned_value[0] == '0') {
+            const prefix = unsigned_value[1];
             if (prefix == 'b' or prefix == 'B') {
                 // Binary
-                return try std.fmt.parseInt(i64, clean_value[2..], 2);
+                const magnitude = try std.fmt.parseInt(i64, unsigned_value[2..], 2);
+                return if (sign_char == '-') -magnitude else magnitude;
             } else if (prefix == 'o' or prefix == 'O') {
                 // Octal
-                return try std.fmt.parseInt(i64, clean_value[2..], 8);
+                const magnitude = try std.fmt.parseInt(i64, unsigned_value[2..], 8);
+                return if (sign_char == '-') -magnitude else magnitude;
             } else if (prefix == 'x' or prefix == 'X') {
                 // Hexadecimal
-                return try std.fmt.parseInt(i64, clean_value[2..], 16);
+                const magnitude = try std.fmt.parseInt(i64, unsigned_value[2..], 16);
+                return if (sign_char == '-') -magnitude else magnitude;
             }
         }
 
         // Edinburgh syntax: radix'number
-        if (std.mem.indexOfScalar(u8, clean_value, '\'')) |quote_pos| {
-            const radix_str = clean_value[0..quote_pos];
-            const number_str = clean_value[quote_pos + 1 ..];
+        if (std.mem.indexOfScalar(u8, unsigned_value, '\'')) |quote_pos| {
+            const radix_str = unsigned_value[0..quote_pos];
+            const number_str = unsigned_value[quote_pos + 1 ..];
 
             // Parse radix (must be 2-36)
             const radix = try std.fmt.parseInt(u8, radix_str, 10);
@@ -151,7 +162,8 @@ pub const Parser = struct {
             }
 
             // Parse number in specified radix
-            return try std.fmt.parseInt(i64, number_str, radix);
+            const magnitude = try std.fmt.parseInt(i64, number_str, radix);
+            return if (sign_char == '-') -magnitude else magnitude;
         }
 
         // Regular decimal
@@ -734,6 +746,48 @@ test "Parser - non-decimal numbers ISO syntax" {
         const rule = try parser.parseRule();
         const expr = rule.head.structure.args[1];
         try std.testing.expectEqual(@as(i64, 255), expr.number);
+    }
+}
+
+test "Parser - signed non-decimal numbers ISO syntax" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // Binary: -0b101 = -5
+    {
+        const source = "X is -0b101.";
+        var parser = Parser.init(alloc, source);
+        const rule = try parser.parseRule();
+        const expr = rule.head.structure.args[1];
+        try std.testing.expectEqual(@as(i64, -5), expr.number);
+    }
+
+    // Octal: -0o10 = -8
+    {
+        const source = "X is -0o10.";
+        var parser = Parser.init(alloc, source);
+        const rule = try parser.parseRule();
+        const expr = rule.head.structure.args[1];
+        try std.testing.expectEqual(@as(i64, -8), expr.number);
+    }
+
+    // Hexadecimal: -0xFF = -255
+    {
+        const source = "X is -0xFF.";
+        var parser = Parser.init(alloc, source);
+        const rule = try parser.parseRule();
+        const expr = rule.head.structure.args[1];
+        try std.testing.expectEqual(@as(i64, -255), expr.number);
+    }
+
+    // Uppercase prefix: -0X2A = -42
+    {
+        const source = "X is -0X2A.";
+        var parser = Parser.init(alloc, source);
+        const rule = try parser.parseRule();
+        const expr = rule.head.structure.args[1];
+        try std.testing.expectEqual(@as(i64, -42), expr.number);
     }
 }
 
